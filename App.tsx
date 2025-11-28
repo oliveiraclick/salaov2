@@ -145,6 +145,7 @@ const App: React.FC = () => {
     setShowLandingPage(false);
     setCurrentUser(null);
     setIsBookingMode(false);
+    setCurrentSalonMetadata(null);
     
     if (updateHistory) {
       const newUrl = window.location.pathname;
@@ -155,22 +156,28 @@ const App: React.FC = () => {
   const handleAdminLogout = () => {
       if(confirm("Deseja realmente sair da área administrativa?")) {
           setView(ViewState.MARKETPLACE);
+          setCurrentSalonMetadata(null); // Clear context
           window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
       }
   };
 
   const handleAdminLogin = () => {
-    const adminNamespace = 'admin_demo_account';
-    Storage.setCurrentNamespace(adminNamespace); 
+    // If we are NOT in a specific salon (i.e. Marketplace), switch to demo admin.
+    // If we ARE in a salon (currentSalonMetadata is set), we assume we are logging into THIS salon.
+    if (!currentSalonMetadata) {
+        const adminNamespace = 'admin_demo_account';
+        Storage.setCurrentNamespace(adminNamespace);
+    }
+    // Else: we keep the current namespace (e.g. 'barbearia-vintage') so the owner manages THEIR salon.
 
-    // Seed data
+    // Seed data if empty (works for both new salons or the demo account)
     const currentServices = Storage.getServices();
     if (currentServices.length === 0) {
-        Storage.saveServices(Storage.getServices());
+        Storage.saveServices(Storage.getServices()); // Will load defaults from storage.ts if empty
         Storage.saveProducts(Storage.getProducts());
         Storage.saveEmployees(Storage.getEmployees());
         
-        // Seed Appointments & Transactions
+        // Seed Appointments & Transactions for demo purposes
         const mockHistory: Appointment[] = [];
         const mockTransactions: Transaction[] = [];
         const today = new Date();
@@ -227,16 +234,19 @@ const App: React.FC = () => {
         Storage.saveTransactions(mockTransactions);
         
         const settings = Storage.getSettings();
-        settings.views = 1240;
-        Storage.saveSettings(settings);
+        if (settings.views === 0) {
+            settings.views = 1240;
+            Storage.saveSettings(settings);
+        }
     }
 
     loadSalonData();
     setView(ViewState.DASHBOARD);
+    setShowLandingPage(false); // Hide LP when going to Dashboard
     setIsLoginModalOpen(false);
     setLoginEmail('');
     setLoginPassword('');
-    window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
+    // We do NOT change the URL if we are managing a specific salon, to keep context.
   };
   
   const fillDemoLogin = () => {
@@ -1452,6 +1462,16 @@ const App: React.FC = () => {
              }} className="absolute top-4 left-4 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
                <ArrowLeft size={24} />
              </button>
+             
+             {/* OWNER LOGIN BUTTON */}
+             <button 
+                onClick={() => setIsLoginModalOpen(true)}
+                className="absolute top-4 right-4 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition"
+                title="Área do Dono"
+             >
+                <Lock size={24} />
+             </button>
+
              <div className="absolute bottom-6 left-6 text-white">
                 <span className="bg-rose-600 text-xs font-bold px-2 py-1 rounded-md mb-2 inline-block">{currentSalonMetadata.category}</span>
                 <h1 className="text-3xl font-bold mb-1">{currentSalonMetadata.name}</h1>
