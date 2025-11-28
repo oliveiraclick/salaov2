@@ -1,10 +1,17 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export const generateDescription = async (name: string, type: 'service' | 'product' | 'employee', extraInfo?: string): Promise<string> => {
   try {
-    // Initialize inside the function to avoid "Uncaught ReferenceError: process is not defined" 
-    // during module loading if the environment isn't fully polyfilled yet.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Safely check for process.env to avoid "Uncaught ReferenceError" in browsers without polyfills
+    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+    
+    if (!apiKey) {
+      console.warn("Gemini API Key is missing.");
+      return "Descrição indisponível (Chave API ausente).";
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
 
     let prompt = "";
     

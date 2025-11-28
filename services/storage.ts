@@ -23,6 +23,17 @@ const KEYS = {
   COUPONS: 'coupons',
 };
 
+// --- HELPER ---
+const safeParse = <T>(data: string | null, fallback: T): T => {
+  if (!data) return fallback;
+  try {
+    return JSON.parse(data);
+  } catch (error) {
+    console.warn('Error parsing storage data:', error);
+    return fallback;
+  }
+};
+
 // --- PLATFORM MOCK DATA (MARKETPLACE) ---
 
 export const MOCK_PLATFORM_SALONS: SalonMetadata[] = [
@@ -143,7 +154,9 @@ export const getPlatformSalons = (): SalonMetadata[] => {
 export const getServices = (): Service[] => {
   const key = getKey(KEYS.SERVICES);
   const data = localStorage.getItem(key);
-  if (data) return JSON.parse(data);
+  const parsed = safeParse<Service[] | null>(data, null);
+  
+  if (parsed) return parsed;
   
   const mock = getMockServices(currentNamespace);
   saveServices(mock);
@@ -157,7 +170,9 @@ export const saveServices = (services: Service[]) => {
 export const getProducts = (): Product[] => {
   const key = getKey(KEYS.PRODUCTS);
   const data = localStorage.getItem(key);
-  if (data) return JSON.parse(data);
+  const parsed = safeParse<Product[] | null>(data, null);
+  
+  if (parsed) return parsed;
 
   const mock = getMockProducts(currentNamespace);
   saveProducts(mock);
@@ -171,7 +186,9 @@ export const saveProducts = (products: Product[]) => {
 export const getEmployees = (): Employee[] => {
   const key = getKey(KEYS.EMPLOYEES);
   const data = localStorage.getItem(key);
-  if (data) return JSON.parse(data);
+  const parsed = safeParse<Employee[] | null>(data, null);
+  
+  if (parsed) return parsed;
 
   const mock = getMockEmployees(currentNamespace);
   saveEmployees(mock);
@@ -185,7 +202,7 @@ export const saveEmployees = (employees: Employee[]) => {
 export const getAppointments = (): Appointment[] => {
   const key = getKey(KEYS.APPOINTMENTS);
   const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : [];
+  return safeParse<Appointment[]>(data, []);
 };
 
 export const saveAppointments = (appointments: Appointment[]) => {
@@ -195,8 +212,9 @@ export const saveAppointments = (appointments: Appointment[]) => {
 export const getSettings = (): ShopSettings => {
   const key = getKey(KEYS.SETTINGS);
   const data = localStorage.getItem(key);
+  const parsed = safeParse<ShopSettings | null>(data, null);
   
-  if (data) return JSON.parse(data);
+  if (parsed) return parsed;
 
   const salonName = MOCK_PLATFORM_SALONS.find(s => s.slug === currentNamespace)?.name || 'Meu Salão';
   
@@ -228,7 +246,7 @@ export const incrementViews = (): number => {
 export const getClients = (): Client[] => {
   const key = getKey(KEYS.CLIENTS);
   const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : [];
+  return safeParse<Client[]>(data, []);
 };
 
 export const saveClient = (client: Client) => {
@@ -245,7 +263,7 @@ export const saveClient = (client: Client) => {
 export const getTransactions = (): Transaction[] => {
   const key = getKey(KEYS.TRANSACTIONS);
   const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : [];
+  return safeParse<Transaction[]>(data, []);
 };
 
 export const saveTransactions = (transactions: Transaction[]) => {
@@ -261,7 +279,7 @@ export const addTransaction = (transaction: Transaction) => {
 export const getCoupons = (): Coupon[] => {
   const key = getKey(KEYS.COUPONS);
   const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : [];
+  return safeParse<Coupon[]>(data, []);
 };
 
 export const saveCoupons = (coupons: Coupon[]) => {

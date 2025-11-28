@@ -281,9 +281,9 @@ const App: React.FC = () => {
 
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.name) return;
-    const item = editingItem as Service;
-    const newItem: Service = { ...item, id: item.id || generateId(), duration: item.duration || 30 };
+    const item = editingItem as Partial<Service>;
+    if (!item || !item.name) return;
+    const newItem: Service = { ...item, id: item.id || generateId(), duration: item.duration || 30 } as Service;
     const updated = item.id ? services.map(s => s.id === newItem.id ? newItem : s) : [...services, newItem];
     setServices(updated);
     Storage.saveServices(updated);
@@ -293,9 +293,9 @@ const App: React.FC = () => {
 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.name) return;
-    const item = editingItem as Product;
-    const newItem: Product = { ...item, id: item.id || generateId(), price: item.price || 0, stock: item.stock || 0 };
+    const item = editingItem as Partial<Product>;
+    if (!item || !item.name) return;
+    const newItem: Product = { ...item, id: item.id || generateId(), price: item.price || 0, stock: item.stock || 0 } as Product;
     const updated = item.id ? products.map(p => p.id === newItem.id ? newItem : p) : [...products, newItem];
     setProducts(updated);
     Storage.saveProducts(updated);
@@ -305,9 +305,9 @@ const App: React.FC = () => {
 
   const handleSaveEmployee = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.name) return;
-    const item = editingItem as Employee;
-    const newItem: Employee = { ...item, id: item.id || generateId(), role: item.role || 'Profissional' };
+    const item = editingItem as Partial<Employee>;
+    if (!item || !item.name) return;
+    const newItem: Employee = { ...item, id: item.id || generateId(), role: item.role || 'Profissional' } as Employee;
     const updated = item.id ? employees.map(e => e.id === newItem.id ? newItem : e) : [...employees, newItem];
     setEmployees(updated);
     Storage.saveEmployees(updated);
@@ -388,14 +388,15 @@ const App: React.FC = () => {
 
   // --- AI HANDLERS ---
   const handleGenerateDescription = async () => {
-    if (!editingItem?.name) return alert('Digite o nome primeiro');
+    const item = editingItem as any;
+    if (!item?.name) return alert('Digite o nome primeiro');
     setIsLoadingAI(true);
     let type: 'service' | 'product' | 'employee' = 'service';
     let extraInfo = '';
     if (view === ViewState.PRODUCTS) type = 'product';
     if (view === ViewState.TEAM) { type = 'employee'; extraInfo = (editingItem as Employee).role || ''; }
-    const desc = await Gemini.generateDescription(editingItem.name, type, extraInfo);
-    setEditingItem(prev => ({ ...prev, description: desc }));
+    const desc = await Gemini.generateDescription(item.name, type, extraInfo);
+    setEditingItem(prev => ({ ...prev, description: desc } as any));
     setIsLoadingAI(false);
   };
 
@@ -413,7 +414,7 @@ const App: React.FC = () => {
             else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
             canvas.width = width; canvas.height = height;
             canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-            setEditingItem(prev => ({ ...prev, photoUrl: canvas.toDataURL('image/jpeg', 0.8) }));
+            setEditingItem(prev => ({ ...prev, photoUrl: canvas.toDataURL('image/jpeg', 0.8) } as any));
         };
         img.src = event.target?.result as string;
       };
@@ -737,7 +738,7 @@ const App: React.FC = () => {
             type="text"
             className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
             value={(editingItem as Service)?.name || ''}
-            onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+            onChange={e => setEditingItem({ ...(editingItem as Service), name: e.target.value })}
             required
           />
           <button
@@ -757,7 +758,7 @@ const App: React.FC = () => {
           type="number"
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Service)?.price || ''}
-          onChange={e => setEditingItem({ ...editingItem, price: parseFloat(e.target.value) })}
+          onChange={e => setEditingItem({ ...(editingItem as Service), price: parseFloat(e.target.value) })}
           required
         />
       </div>
@@ -767,7 +768,7 @@ const App: React.FC = () => {
           type="number"
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Service)?.duration || ''}
-          onChange={e => setEditingItem({ ...editingItem, duration: parseFloat(e.target.value) })}
+          onChange={e => setEditingItem({ ...(editingItem as Service), duration: parseFloat(e.target.value) })}
           required
         />
       </div>
@@ -776,7 +777,7 @@ const App: React.FC = () => {
         <textarea
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Service)?.description || ''}
-          onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
+          onChange={e => setEditingItem({ ...(editingItem as Service), description: e.target.value })}
           rows={3}
         />
       </div>
@@ -808,7 +809,7 @@ const App: React.FC = () => {
             type="text"
             className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
             value={(editingItem as Product)?.name || ''}
-            onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+            onChange={e => setEditingItem({ ...(editingItem as Product), name: e.target.value })}
             required
           />
           <button
@@ -828,7 +829,7 @@ const App: React.FC = () => {
             type="number"
             className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
             value={(editingItem as Product)?.price || ''}
-            onChange={e => setEditingItem({ ...editingItem, price: parseFloat(e.target.value) })}
+            onChange={e => setEditingItem({ ...(editingItem as Product), price: parseFloat(e.target.value) })}
             required
           />
         </div>
@@ -838,7 +839,7 @@ const App: React.FC = () => {
             type="number"
             className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
             value={(editingItem as Product)?.stock || ''}
-            onChange={e => setEditingItem({ ...editingItem, stock: parseFloat(e.target.value) })}
+            onChange={e => setEditingItem({ ...(editingItem as Product), stock: parseFloat(e.target.value) })}
             required
           />
         </div>
@@ -848,7 +849,7 @@ const App: React.FC = () => {
         <textarea
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Product)?.description || ''}
-          onChange={e => setEditingItem({ ...editingItem, description: e.target.value })}
+          onChange={e => setEditingItem({ ...(editingItem as Product), description: e.target.value })}
           rows={2}
         />
       </div>
@@ -879,7 +880,7 @@ const App: React.FC = () => {
             type="text"
             className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
             value={(editingItem as Employee)?.name || ''}
-            onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+            onChange={e => setEditingItem({ ...(editingItem as Employee), name: e.target.value })}
             required
           />
            <button
@@ -898,7 +899,7 @@ const App: React.FC = () => {
           type="text"
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Employee)?.role || ''}
-          onChange={e => setEditingItem({ ...editingItem, role: e.target.value })}
+          onChange={e => setEditingItem({ ...(editingItem as Employee), role: e.target.value })}
           required
         />
       </div>
@@ -907,7 +908,7 @@ const App: React.FC = () => {
         <textarea
           className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
           value={(editingItem as Employee)?.bio || ''}
-          onChange={e => setEditingItem({ ...editingItem, bio: e.target.value })}
+          onChange={e => setEditingItem({ ...(editingItem as Employee), bio: e.target.value })}
           rows={3}
         />
       </div>
@@ -1099,14 +1100,17 @@ const App: React.FC = () => {
               ))}
           </div>
           
-          <button onClick={() => { setEditingItem({ type: 'fixed', active: true }); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10">
+          <button onClick={() => { setEditingItem({ type: 'fixed', active: true } as Coupon); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10">
               <Plus size={24} />
           </button>
       </div>
   );
 
   // --- CONFIRMATION SCREEN ---
-  const renderConfirmationStep = () => (
+  const renderConfirmationStep = () => {
+    if (!selectedService) return null; // Safety check
+    
+    return (
       <div className="text-center">
          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 size={40} className="text-green-600" />
@@ -1116,7 +1120,7 @@ const App: React.FC = () => {
          <div className="bg-slate-50 p-6 rounded-xl text-left space-y-4 mb-6">
             <div className="flex justify-between items-center border-b border-slate-200 pb-3">
               <span className="text-slate-500">Serviço</span>
-              <span className="font-bold text-slate-800">{selectedService?.name}</span>
+              <span className="font-bold text-slate-800">{selectedService.name}</span>
             </div>
             
             <div className="flex justify-between items-center border-b border-slate-200 pb-3">
@@ -1158,13 +1162,13 @@ const App: React.FC = () => {
               <div className="text-right">
                   {appliedCoupon && (
                       <span className="block text-xs text-slate-400 line-through">
-                          {settings.currency} {(selectedService?.price || 0) + cart.reduce((a,i) => a+i.price, 0)}
+                          {settings.currency} {(selectedService.price || 0) + cart.reduce((a,i) => a+i.price, 0)}
                       </span>
                   )}
                   <span className="font-bold text-rose-600 text-xl">
                     {settings.currency} { 
                         (() => {
-                            const total = (selectedService?.price || 0) + cart.reduce((a,i) => a+i.price, 0);
+                            const total = (selectedService.price || 0) + cart.reduce((a,i) => a+i.price, 0);
                             if (!appliedCoupon) return total;
                             const discount = appliedCoupon.type === 'fixed' ? appliedCoupon.discount : (total * appliedCoupon.discount / 100);
                             return Math.max(0, total - discount).toFixed(2);
@@ -1182,7 +1186,8 @@ const App: React.FC = () => {
            Confirmar Agendamento
          </button>
       </div>
-  );
+    );
+  };
 
   const renderMarketplace = () => (
     <div className="space-y-6 animate-fadeIn">
@@ -1912,20 +1917,20 @@ const App: React.FC = () => {
               {/* Transaction Form */}
               {view === ViewState.FINANCE && (
                    <form onSubmit={handleSaveTransaction} className="space-y-4">
-                       <div> <label className="block text-sm font-medium text-slate-700">Descrição</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.title || ''} onChange={e => setEditingItem({...editingItem, title: e.target.value})} /> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Valor</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.amount || ''} onChange={e => setEditingItem({...editingItem, amount: parseFloat(e.target.value)})} /> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.type || 'expense'} onChange={e => setEditingItem({...editingItem, type: e.target.value as any})}> <option value="expense">Despesa</option> <option value="income">Receita</option> </select> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Status</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.status || 'paid'} onChange={e => setEditingItem({...editingItem, status: e.target.value as any})}> <option value="paid">Pago / Recebido</option> <option value="pending">Pendente / A Receber</option> </select> </div>
+                       <div> <label className="block text-sm font-medium text-slate-700">Descrição</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.title || ''} onChange={e => setEditingItem({...editingItem as Transaction, title: e.target.value})} /> </div>
+                       <div> <label className="block text-sm font-medium text-slate-700">Valor</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.amount || ''} onChange={e => setEditingItem({...editingItem as Transaction, amount: parseFloat(e.target.value)})} /> </div>
+                       <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.type || 'expense'} onChange={e => setEditingItem({...editingItem as Transaction, type: e.target.value as any})}> <option value="expense">Despesa</option> <option value="income">Receita</option> </select> </div>
+                       <div> <label className="block text-sm font-medium text-slate-700">Status</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.status || 'paid'} onChange={e => setEditingItem({...editingItem as Transaction, status: e.target.value as any})}> <option value="paid">Pago / Recebido</option> <option value="pending">Pendente / A Receber</option> </select> </div>
                        <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar</button>
                    </form>
               )}
               {/* Coupon Form */}
               {view === ViewState.COUPONS && (
                    <form onSubmit={handleSaveCoupon} className="space-y-4">
-                       <div> <label className="block text-sm font-medium text-slate-700">Código do Cupom</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md uppercase" placeholder="Ex: BEMVINDO10" value={(editingItem as Coupon)?.code || ''} onChange={e => setEditingItem({...editingItem, code: e.target.value})} /> </div>
+                       <div> <label className="block text-sm font-medium text-slate-700">Código do Cupom</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md uppercase" placeholder="Ex: BEMVINDO10" value={(editingItem as Coupon)?.code || ''} onChange={e => setEditingItem({...editingItem as Coupon, code: e.target.value})} /> </div>
                        <div className="grid grid-cols-2 gap-4">
-                           <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.type || 'fixed'} onChange={e => setEditingItem({...editingItem, type: e.target.value as any})}> <option value="fixed">Fixo (R$)</option> <option value="percent">Porcentagem (%)</option> </select> </div>
-                           <div> <label className="block text-sm font-medium text-slate-700">Valor Desconto</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.discount || ''} onChange={e => setEditingItem({...editingItem, discount: parseFloat(e.target.value)})} /> </div>
+                           <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.type || 'fixed'} onChange={e => setEditingItem({...editingItem as Coupon, type: e.target.value as any})}> <option value="fixed">Fixo (R$)</option> <option value="percent">Porcentagem (%)</option> </select> </div>
+                           <div> <label className="block text-sm font-medium text-slate-700">Valor Desconto</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.discount || ''} onChange={e => setEditingItem({...editingItem as Coupon, discount: parseFloat(e.target.value)})} /> </div>
                        </div>
                        <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar Cupom</button>
                    </form>
