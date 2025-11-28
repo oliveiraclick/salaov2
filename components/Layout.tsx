@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewState } from '../types';
 import { Scissors, Package, Settings, Users, Store, LayoutDashboard, LogIn, Wallet, Calendar, ShoppingBag } from 'lucide-react';
@@ -45,16 +44,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
            )}
         </div>
         
-        {/* New Login Button in Header for Marketplace */}
-        {isMarketplace && (
-          <button 
-            data-action="login"
-            className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full hover:bg-rose-100 transition flex items-center gap-1"
-          >
-            <LogIn size={14} /> Área do Dono
-          </button>
-        )}
-
         {!isPublicMode && currentView === ViewState.CLIENT_PREVIEW && (
           <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wide">
             Modo Cliente

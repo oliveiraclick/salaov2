@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon } from './types';
+import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant } from './types';
 import * as Storage from './services/storage';
 import * as Gemini from './services/gemini';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
-import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus } from 'lucide-react';
+import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase } from 'lucide-react';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.MARKETPLACE);
@@ -24,6 +24,9 @@ const App: React.FC = () => {
   // Marketplace State
   const [platformSalons, setPlatformSalons] = useState<SalonMetadata[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // SaaS State
+  const [tenants, setTenants] = useState<Tenant[]>([]);
 
   // Public/Landing Page State
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -59,16 +62,20 @@ const App: React.FC = () => {
   // --- INITIALIZATION & ROUTING SIMULATION ---
 
   useEffect(() => {
-    // 1. Load Marketplace Data
+    // 1. Load Marketplace & SaaS Data
     const allSalons = Storage.getPlatformSalons();
     setPlatformSalons(allSalons);
+    setTenants(Storage.getTenants());
 
     // 2. Check URL Params for deep linking
     const urlParams = new URLSearchParams(window.location.search);
     const salonSlug = urlParams.get('salon');
     const isAdmin = urlParams.get('admin');
+    const isSaas = urlParams.get('saas');
 
-    if (isAdmin) {
+    if (isSaas === 'admin') {
+      setView(ViewState.SAAS_ADMIN);
+    } else if (isAdmin) {
       handleAdminLogin();
     } else if (salonSlug) {
       const metadata = allSalons.find(s => s.slug === salonSlug);
@@ -85,7 +92,11 @@ const App: React.FC = () => {
     const handlePopState = () => {
        const params = new URLSearchParams(window.location.search);
        const slug = params.get('salon');
-       if (slug) {
+       const saas = params.get('saas');
+       
+       if (saas === 'admin') {
+           setView(ViewState.SAAS_ADMIN);
+       } else if (slug) {
          const meta = allSalons.find(s => s.slug === slug);
          if (meta) handleNavigateToSalon(slug, meta, false);
        } else {
@@ -162,6 +173,13 @@ const App: React.FC = () => {
   };
 
   const handleAdminLogin = () => {
+    // Logic for Super Admin Login (Demo)
+    if (loginEmail === 'super@admin.com') {
+      setView(ViewState.SAAS_ADMIN);
+      setIsLoginModalOpen(false);
+      return;
+    }
+
     // If we are NOT in a specific salon (i.e. Marketplace), switch to demo admin.
     // If we ARE in a salon (currentSalonMetadata is set), we assume we are logging into THIS salon.
     if (!currentSalonMetadata) {
@@ -990,201 +1008,182 @@ const App: React.FC = () => {
       </div>
   );
 
-  const renderFinanceDashboard = () => {
-      // Calculate totals
-      const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-      const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-      const balance = totalIncome - totalExpense;
-      const pendingIncome = transactions.filter(t => t.type === 'income' && t.status === 'pending').reduce((sum, t) => sum + t.amount, 0);
+  const renderSaaSAdmin = () => {
+    const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
+    const totalTenants = tenants.length;
+    const activeTenants = tenants.filter(t => t.status === 'active').length;
 
-      return (
-          <div className="animate-fadeIn space-y-6">
-              <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-slate-800">Financeiro</h2>
-              </div>
+    return (
+      <div className="space-y-8 animate-fadeIn max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+           <div>
+              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                 <ShieldCheck className="text-rose-600" /> Super Admin
+              </h1>
+              <p className="text-slate-500">Gestão da Plataforma</p>
+           </div>
+           <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-sm font-bold text-slate-500 hover:text-slate-800">
+              Sair
+           </button>
+        </div>
 
-              {/* Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg relative overflow-hidden">
-                       <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Saldo Atual</p>
-                       <h3 className="text-3xl font-bold">{settings.currency} {balance.toFixed(2)}</h3>
-                       <div className="absolute right-0 top-0 p-4 opacity-10"><Wallet size={64} /></div>
-                   </div>
-                   <div className="grid grid-cols-2 gap-2 md:col-span-2">
-                       <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
-                           <div className="flex items-center gap-2 mb-2 text-green-600">
-                               <TrendingUp size={18} /> <span className="text-xs font-bold uppercase">Receitas</span>
-                           </div>
-                           <p className="text-xl font-bold text-green-700">{settings.currency} {totalIncome.toFixed(2)}</p>
-                           <p className="text-xs text-green-500 mt-1">Previsto: {settings.currency} {pendingIncome.toFixed(2)}</p>
-                       </div>
-                       <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
-                           <div className="flex items-center gap-2 mb-2 text-red-600">
-                               <TrendingDown size={18} /> <span className="text-xs font-bold uppercase">Despesas</span>
-                           </div>
-                           <p className="text-xl font-bold text-red-700">{settings.currency} {totalExpense.toFixed(2)}</p>
-                       </div>
-                   </div>
-              </div>
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">MRR (Mensal)</p>
+               <h3 className="text-3xl font-bold text-rose-600">R$ {totalRevenue.toFixed(2)}</h3>
+               <p className="text-xs text-green-600 font-bold mt-2 flex items-center gap-1"><TrendingUp size={12}/> +12% esse mês</p>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total de Salões</p>
+               <h3 className="text-3xl font-bold text-slate-800">{totalTenants}</h3>
+               <p className="text-xs text-slate-400 mt-2">{activeTenants} ativos</p>
+           </div>
+           <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-sm">
+               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Plano Pro</p>
+               <h3 className="text-3xl font-bold">{tenants.filter(t => t.plan === 'pro').length}</h3>
+               <p className="text-xs text-slate-400 mt-2">Salões Pagantes</p>
+           </div>
+        </div>
 
-              {/* Transaction List */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                  <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                      <h3 className="font-bold text-slate-700">Extrato</h3>
-                      <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="text-rose-600 text-xs font-bold flex items-center gap-1">
-                          <Plus size={14} /> Lançar
-                      </button>
-                  </div>
-                  <div className="divide-y divide-slate-50">
-                      {transactions.slice().reverse().map(t => (
-                          <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
-                              <div className="flex items-center gap-3">
-                                  <div className={`p-2 rounded-full ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                      {t.type === 'income' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                                  </div>
-                                  <div>
-                                      <p className="text-sm font-bold text-slate-800">{t.title}</p>
-                                      <div className="flex gap-2 text-xs text-slate-400">
-                                          <span>{new Date(t.date).toLocaleDateString()}</span>
-                                          <span className="capitalize">• {t.status === 'pending' ? 'Pendente' : 'Pago'}</span>
-                                      </div>
-                                  </div>
-                              </div>
-                              <div className="text-right">
-                                  <p className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                                      {t.type === 'income' ? '+' : '-'} {settings.currency} {t.amount}
-                                  </p>
-                                  {t.status === 'pending' && <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 rounded">Previsto</span>}
-                              </div>
-                          </div>
-                      ))}
-                      {transactions.length === 0 && <p className="p-6 text-center text-slate-400 text-sm">Nenhuma transação registrada.</p>}
-                  </div>
-              </div>
-          </div>
-      );
+        {/* Tenants List */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+               <h3 className="font-bold text-slate-800">Salões Cadastrados</h3>
+               <div className="flex gap-2">
+                  <input type="text" placeholder="Buscar salão..." className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm focus:outline-none focus:border-rose-500" />
+               </div>
+            </div>
+            <table className="w-full text-left text-sm">
+               <thead className="bg-slate-50 text-slate-500 font-medium">
+                  <tr>
+                     <th className="px-6 py-3">Nome / Slug</th>
+                     <th className="px-6 py-3">Dono</th>
+                     <th className="px-6 py-3">Plano</th>
+                     <th className="px-6 py-3">Status</th>
+                     <th className="px-6 py-3">MRR</th>
+                     <th className="px-6 py-3">Ações</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-100">
+                  {tenants.map(tenant => (
+                     <tr key={tenant.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4">
+                           <p className="font-bold text-slate-800">{tenant.slug}</p>
+                           <p className="text-xs text-slate-400">ID: {tenant.id}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                           <p className="text-slate-700">{tenant.ownerName}</p>
+                           <p className="text-xs text-slate-400">{tenant.email}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${tenant.plan === 'pro' ? 'bg-purple-100 text-purple-700' : tenant.plan === 'enterprise' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                              {tenant.plan}
+                           </span>
+                        </td>
+                         <td className="px-6 py-4">
+                           <span className={`flex items-center gap-1 font-bold text-xs ${tenant.status === 'active' ? 'text-green-600' : 'text-red-500'}`}>
+                              <div className={`w-2 h-2 rounded-full ${tenant.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`} />
+                              {tenant.status === 'active' ? 'Ativo' : 'Cancelado'}
+                           </span>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-700">R$ {tenant.mrr}</td>
+                        <td className="px-6 py-4">
+                           <button onClick={() => handleNavigateToSalon(tenant.slug)} className="text-rose-600 hover:underline text-xs font-bold flex items-center gap-1">
+                              <ExternalLink size={12} /> Acessar
+                           </button>
+                        </td>
+                     </tr>
+                  ))}
+               </tbody>
+            </table>
+        </div>
+      </div>
+    );
   };
 
-  const renderCoupons = () => (
-      <div className="space-y-6 animate-fadeIn">
-          <div className="flex justify-between items-center">
-              <div>
-                  <h2 className="text-2xl font-bold text-slate-800">Cupons de Desconto</h2>
-                  <p className="text-slate-500 text-sm">Gerencie promoções</p>
-              </div>
-              <button onClick={() => setView(ViewState.DASHBOARD)} className="text-sm text-slate-500 hover:underline">Voltar</button>
-          </div>
+  const renderSaaSLandingPage = () => {
+    return (
+      <div className="min-h-screen bg-slate-50">
+          {/* Header */}
+          <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-slate-200">
+             <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+                 <div className="flex items-center gap-2">
+                    <div className="bg-rose-600 p-1.5 rounded-lg text-white">
+                        <Scissors size={20} />
+                    </div>
+                    <span className="font-bold text-xl text-slate-800">BelezaApp <span className="text-slate-400 font-light">Pro</span></span>
+                 </div>
+                 <div className="flex gap-4">
+                     <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-slate-600 font-medium hover:text-rose-600">Entrar</button>
+                     <button onClick={() => alert('Função de cadastro real viria aqui.')} className="bg-rose-600 text-white px-5 py-2 rounded-full font-bold hover:bg-rose-700 transition shadow-lg shadow-rose-200">Começar Grátis</button>
+                 </div>
+             </div>
+          </header>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-              {coupons.map(c => (
-                  <div key={c.id} className={`p-4 rounded-xl border flex justify-between items-center ${c.active ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                      <div>
-                          <div className="flex items-center gap-2 mb-1">
-                              <Ticket size={16} className="text-rose-500" />
-                              <h3 className="font-bold text-lg text-slate-800 tracking-wider">{c.code}</h3>
+          {/* Hero */}
+          <section className="pt-20 pb-32 px-6 text-center max-w-4xl mx-auto">
+              <span className="text-rose-600 font-bold bg-rose-50 px-3 py-1 rounded-full text-sm mb-6 inline-block">Plataforma #1 para Salões e Barbearias</span>
+              <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight">
+                  Seu salão com <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-purple-600">agendamento online</span> e gestão completa.
+              </h1>
+              <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto">
+                  Dê adeus à agenda de papel. Tenha site próprio, controle financeiro, lembretes automáticos e receba pagamentos online. Tudo em um só lugar.
+              </p>
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                  <button onClick={() => {
+                      // Simulating Tenant Creation
+                      const newSlug = `salao-novo-${Math.floor(Math.random() * 1000)}`;
+                      const newTenant: Tenant = {
+                          id: generateId(), slug: newSlug, ownerName: 'Você', email: 'voce@exemplo.com', plan: 'free', status: 'active', mrr: 0, createdAt: Date.now()
+                      };
+                      Storage.addTenant(newTenant);
+                      handleNavigateToSalon(newSlug);
+                      setTimeout(() => handleAdminLogin(), 100); // Login as admin immediately
+                  }} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-black transition flex items-center justify-center gap-2">
+                      <Rocket size={20} /> Criar Conta Grátis
+                  </button>
+                  <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-slate-700 border border-slate-200 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition">
+                      Ver Demonstração
+                  </button>
+              </div>
+          </section>
+
+          {/* Features */}
+          <section className="bg-white py-24 border-y border-slate-100">
+              <div className="max-w-6xl mx-auto px-6">
+                  <div className="grid md:grid-cols-3 gap-12">
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                              <Globe size={32} />
                           </div>
-                          <p className="text-sm text-slate-500">
-                              {c.type === 'percent' ? `${c.discount}% OFF` : `${settings.currency} ${c.discount} OFF`}
-                          </p>
-                          <p className="text-xs text-slate-400 mt-1">Usado {c.usageCount} vezes</p>
+                          <h3 className="text-xl font-bold text-slate-800 mb-3">Site Exclusivo</h3>
+                          <p className="text-slate-500">Seu salão ganha uma página profissional com link personalizado para enviar no WhatsApp.</p>
                       </div>
-                      <div className="flex gap-2">
-                           <button onClick={() => { setEditingItem(c); setIsModalOpen(true); }} className="text-slate-400 hover:text-blue-500 p-2">
-                               <Pencil size={18} />
-                           </button>
-                           <button onClick={() => handleDelete(c.id, 'coupon')} className="text-slate-400 hover:text-red-500 p-2">
-                               <Trash2 size={18} />
-                           </button>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                              <Wallet size={32} />
+                          </div>
+                          <h3 className="text-xl font-bold text-slate-800 mb-3">Controle Financeiro</h3>
+                          <p className="text-slate-500">Saiba exatamente quanto entra e sai. Controle comissões, despesas e lucro real.</p>
+                      </div>
+                      <div className="text-center">
+                          <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                              <Zap size={32} />
+                          </div>
+                          <h3 className="text-xl font-bold text-slate-800 mb-3">Inteligência Artificial</h3>
+                          <p className="text-slate-500">Descrição de serviços e produtos geradas automaticamente para vender mais.</p>
                       </div>
                   </div>
-              ))}
-          </div>
-          
-          <button onClick={() => { setEditingItem({ type: 'fixed', active: true } as Coupon); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10">
-              <Plus size={24} />
-          </button>
-      </div>
-  );
-
-  // --- CONFIRMATION SCREEN ---
-  const renderConfirmationStep = () => {
-    if (!selectedService) return null; // Safety check
-    
-    return (
-      <div className="text-center">
-         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={40} className="text-green-600" />
-         </div>
-         <h3 className="text-xl font-bold text-slate-800 mb-6">Confirme seu Agendamento</h3>
-
-         <div className="bg-slate-50 p-6 rounded-xl text-left space-y-4 mb-6">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <span className="text-slate-500">Serviço</span>
-              <span className="font-bold text-slate-800">{selectedService.name}</span>
-            </div>
-            
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <span className="text-slate-500">Profissional</span>
-              <span className="font-bold text-slate-800">{selectedEmployee?.name || 'Indiferente'}</span>
-            </div>
-            
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <span className="text-slate-500">Data</span>
-              <span className="font-bold text-slate-800">{new Date(selectedDate + 'T12:00:00').toLocaleDateString()} às {selectedTime}</span>
-            </div>
-
-            {/* Coupon Input */}
-            <div className="border-b border-slate-200 pb-3">
-               <div className="flex gap-2">
-                   <input 
-                      type="text" 
-                      placeholder="Código do Cupom"
-                      className="flex-1 p-2 border border-slate-300 rounded-lg text-sm uppercase"
-                      value={couponCodeInput}
-                      onChange={e => setCouponCodeInput(e.target.value)}
-                   />
-                   <button 
-                      onClick={handleApplyCoupon}
-                      className="bg-slate-800 text-white px-3 rounded-lg text-xs font-bold hover:bg-black"
-                   >
-                      Aplicar
-                   </button>
-               </div>
-               {appliedCoupon && (
-                   <p className="text-green-600 text-xs mt-1 flex items-center gap-1">
-                       <CheckCircle2 size={10} /> Cupom aplicado: {appliedCoupon.type === 'percent' ? `${appliedCoupon.discount}%` : `- ${settings.currency}${appliedCoupon.discount}`}
-                   </p>
-               )}
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <span className="text-slate-500">Total Estimado</span>
-              <div className="text-right">
-                  {appliedCoupon && (
-                      <span className="block text-xs text-slate-400 line-through">
-                          {settings.currency} {(selectedService.price || 0) + cart.reduce((a,i) => a+i.price, 0)}
-                      </span>
-                  )}
-                  <span className="font-bold text-rose-600 text-xl">
-                    {settings.currency} { 
-                        (() => {
-                            const total = (selectedService.price || 0) + cart.reduce((a,i) => a+i.price, 0);
-                            if (!appliedCoupon) return total;
-                            const discount = appliedCoupon.type === 'fixed' ? appliedCoupon.discount : (total * appliedCoupon.discount / 100);
-                            return Math.max(0, total - discount).toFixed(2);
-                        })()
-                    }
-                  </span>
               </div>
-            </div>
-         </div>
+          </section>
 
-         <button
-          onClick={handleConfirmBooking}
-          className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-black transition shadow-lg"
-         >
-           Confirmar Agendamento
-         </button>
+          {/* Footer */}
+          <footer className="bg-slate-900 text-white py-12 px-6 text-center">
+              <p className="text-slate-400 mb-4">&copy; 2024 BelezaApp SaaS. Todos os direitos reservados.</p>
+              <button onClick={() => setView(ViewState.SAAS_ADMIN)} className="text-xs text-slate-700 hover:text-slate-500">Área Restrita</button>
+          </footer>
       </div>
     );
   };
@@ -1201,6 +1200,19 @@ const App: React.FC = () => {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
+      </div>
+
+      {/* CTA for Business Owners */}
+      <div onClick={() => setView(ViewState.SAAS_LP)} className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 text-white relative overflow-hidden cursor-pointer group shadow-lg">
+          <div className="relative z-10">
+              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider mb-2 inline-block">Para Donos de Salão</span>
+              <h3 className="text-xl font-bold mb-1 group-hover:text-rose-400 transition">Cadastre seu negócio</h3>
+              <p className="text-sm text-slate-300 mb-4 max-w-xs">Tenha agendamento online, site grátis e gestão completa hoje mesmo.</p>
+              <button className="bg-white text-slate-900 px-4 py-2 rounded-lg text-xs font-bold hover:bg-rose-500 hover:text-white transition">Começar Agora</button>
+          </div>
+          <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4 group-hover:scale-110 transition duration-500">
+              <Briefcase size={120} />
+          </div>
       </div>
 
       {/* Categories (Mock) */}
@@ -1448,356 +1460,444 @@ const App: React.FC = () => {
     );
   };
 
-  const renderLandingPage = () => {
-    if (!currentSalonMetadata) return null;
-    return (
-      <div className="animate-fadeIn">
-         <div className="relative h-64 -mx-4 -mt-4 mb-6">
-             <img src={currentSalonMetadata.coverUrl} className="w-full h-full object-cover" alt="Cover" />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-             <button onClick={() => {
-                 // Check if we have history to go back to (e.g. Admin Dashboard)
-                 if (window.history.length > 1) {
-                     window.history.back();
-                     setShowLandingPage(false);
-                     setView(ViewState.DASHBOARD); // Default fallback if history is weird, but usually browser back handles it
-                 } else {
-                     handleBackToMarketplace();
-                 }
-             }} className="absolute top-4 left-4 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
-               <ArrowLeft size={24} />
-             </button>
-             
-             {/* OWNER LOGIN BUTTON */}
-             <button 
-                onClick={() => setIsLoginModalOpen(true)}
-                className="absolute top-4 right-4 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition"
-                title="Área do Dono"
-             >
-                <Lock size={24} />
-             </button>
+  const renderFinanceDashboard = () => {
+    const totalIncome = transactions.filter(t => t.type === 'income' && t.status === 'paid').reduce((sum, t) => sum + t.amount, 0);
+    const totalExpense = transactions.filter(t => t.type === 'expense' && t.status === 'paid').reduce((sum, t) => sum + t.amount, 0);
+    const pendingIncome = transactions.filter(t => t.type === 'income' && t.status === 'pending').reduce((sum, t) => sum + t.amount, 0);
 
-             <div className="absolute bottom-6 left-6 text-white">
-                <span className="bg-rose-600 text-xs font-bold px-2 py-1 rounded-md mb-2 inline-block">{currentSalonMetadata.category}</span>
-                <h1 className="text-3xl font-bold mb-1">{currentSalonMetadata.name}</h1>
-                <p className="text-white/80 text-sm flex items-center gap-1"><MapPinIcon size={14} /> {currentSalonMetadata.location}</p>
+    return (
+      <div className="space-y-6 animate-fadeIn pb-20">
+         <div className="grid grid-cols-2 gap-4">
+             <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                 <p className="text-xs font-bold text-green-600 uppercase mb-1">Receitas</p>
+                 <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-1"><TrendingUp size={18} className="text-green-500"/> {totalIncome}</h3>
+             </div>
+             <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
+                 <p className="text-xs font-bold text-red-600 uppercase mb-1">Despesas</p>
+                 <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-1"><TrendingDown size={18} className="text-red-500"/> {totalExpense}</h3>
+             </div>
+         </div>
+         
+         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
+             <div>
+                 <p className="text-xs text-slate-400 font-bold uppercase">Saldo Líquido</p>
+                 <h3 className={`text-xl font-bold ${totalIncome - totalExpense >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                     {settings.currency} {(totalIncome - totalExpense).toFixed(2)}
+                 </h3>
+             </div>
+             <div className="text-right">
+                 <p className="text-xs text-slate-400 font-bold uppercase">A Receber</p>
+                 <p className="text-sm font-bold text-amber-500">{settings.currency} {pendingIncome.toFixed(2)}</p>
              </div>
          </div>
 
-         {/* Actions */}
-         <div className="grid grid-cols-2 gap-4 mb-8">
-            <button 
-              onClick={() => { setIsBookingMode(true); setShowLandingPage(false); }}
-              className="bg-rose-600 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-rose-200 flex items-center justify-center gap-2"
-            >
-              <Calendar size={18} /> Agendar
-            </button>
-            <button 
-              onClick={() => { setView(ViewState.CLIENT_STORE); setShowLandingPage(false); }}
-              className="bg-white text-slate-700 border border-slate-200 py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50"
-            >
-               <ShoppingBag size={18} /> Ver Loja
-            </button>
-         </div>
-
-         {/* About */}
-         <div className="space-y-6">
-            <section>
-               <h3 className="font-bold text-lg text-slate-800 mb-3">Sobre</h3>
-               <p className="text-slate-500 text-sm leading-relaxed">
-                 Bem-vindo ao {currentSalonMetadata.name}. Oferecemos os melhores serviços de {currentSalonMetadata.category.toLowerCase()} da região com profissionais qualificados e ambiente acolhedor.
-               </p>
-            </section>
-
-            <section>
-               <h3 className="font-bold text-lg text-slate-800 mb-3">Horários</h3>
-               <div className="bg-slate-50 p-4 rounded-xl space-y-2 text-sm text-slate-600">
-                  <div className="flex justify-between"><span>Seg - Sex</span> <span>{settings.openTime} - {settings.closeTime}</span></div>
-                  <div className="flex justify-between"><span>Sábado</span> <span>09:00 - 18:00</span></div>
-                  <div className="flex justify-between text-slate-400"><span>Domingo</span> <span>Fechado</span></div>
-               </div>
-            </section>
+         <div>
+             <div className="flex justify-between items-center mb-4">
+                 <h3 className="font-bold text-slate-800">Transações</h3>
+                 <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="text-xs bg-slate-900 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-1">
+                     <Plus size={14} /> Nova
+                 </button>
+             </div>
+             
+             <div className="space-y-3">
+                 {transactions.length === 0 ? (
+                     <p className="text-center text-slate-400 text-sm py-4">Nenhuma transação registrada.</p>
+                 ) : (
+                     transactions.slice().reverse().map(t => (
+                         <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-100 flex items-center justify-between">
+                             <div className="flex items-center gap-3">
+                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                     {t.type === 'income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                 </div>
+                                 <div>
+                                     <p className="font-bold text-slate-800 text-sm">{t.title}</p>
+                                     <p className="text-xs text-slate-500 capitalize">{t.category} • {t.date.split('-').reverse().join('/')}</p>
+                                 </div>
+                             </div>
+                             <div className="text-right">
+                                 <p className={`font-bold text-sm ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                     {t.type === 'income' ? '+' : '-'} {t.amount}
+                                 </p>
+                                 <div className="flex items-center justify-end gap-2">
+                                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${t.status === 'paid' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-600'}`}>
+                                         {t.status === 'paid' ? 'Pago' : 'Pendente'}
+                                     </span>
+                                     <button onClick={() => handleDelete(t.id, 'transaction')} className="text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                                 </div>
+                             </div>
+                         </div>
+                     ))
+                 )}
+             </div>
          </div>
       </div>
     );
   };
 
-  const renderClientDashboard = () => {
-      const myAppointments = appointments.filter(a => a.clientId === currentUser?.id).sort((a,b) => b.createdAt - a.createdAt);
-      const nextApp = myAppointments.find(a => a.status === 'scheduled' && new Date(a.date) >= new Date(new Date().setHours(0,0,0,0)));
-      
-      return (
-          <div className="space-y-6 animate-fadeIn pb-24">
-              <div className="flex justify-between items-center">
-                 <div>
-                     <h2 className="text-xl font-bold text-slate-800">Olá, {currentUser?.name.split(' ')[0]}</h2>
-                     <p className="text-sm text-slate-500">Sua conta</p>
-                 </div>
-                 <button onClick={handleLogout} className="text-slate-400 hover:text-slate-600">
-                     <LogOut size={20} />
-                 </button>
-              </div>
-
-              {nextApp && (
-                  <div className="bg-rose-600 text-white p-5 rounded-2xl shadow-lg relative overflow-hidden">
-                      <div className="relative z-10">
-                          <p className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2">Próximo Agendamento</p>
-                          <h3 className="text-2xl font-bold mb-1">{nextApp.serviceName}</h3>
-                          <p className="text-white/90 text-sm mb-4">{new Date(nextApp.date + 'T12:00:00').toLocaleDateString()} às {nextApp.time}</p>
-                          
-                          <div className="flex gap-2">
-                             <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-lg text-xs font-bold backdrop-blur-sm">
-                                <User size={14} /> {nextApp.employeeName}
-                             </div>
-                             <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-lg text-xs font-bold backdrop-blur-sm">
-                                <DollarSign size={14} /> {nextApp.totalPrice}
-                             </div>
+  const renderCoupons = () => (
+      <div className="space-y-4 animate-fadeIn">
+          <div className="flex justify-between items-center">
+               <h3 className="font-bold text-lg text-slate-800">Cupons de Desconto</h3>
+               <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2">
+                  <Plus size={16} /> Criar Cupom
+               </button>
+          </div>
+          
+          {coupons.length === 0 ? (
+              <EmptyState icon={Ticket} title="Sem cupons" description="Crie campanhas de desconto." />
+          ) : (
+              <div className="grid gap-4">
+                  {coupons.map(c => (
+                      <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center relative overflow-hidden">
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-500 to-purple-600"></div>
+                          <div>
+                              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Código</p>
+                              <h3 className="text-xl font-black text-slate-800 tracking-wide">{c.code}</h3>
+                              <p className="text-xs text-slate-500 mt-1">
+                                 {c.type === 'percent' ? `${c.discount}% OFF` : `${settings.currency} ${c.discount} OFF`} • {c.usageCount} usos
+                              </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                               <div className={`px-2 py-1 rounded text-xs font-bold uppercase ${c.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
+                                   {c.active ? 'Ativo' : 'Inativo'}
+                               </div>
+                               <button onClick={() => handleDelete(c.id, 'coupon')} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
                           </div>
                       </div>
-                      <div className="absolute -bottom-4 -right-4 opacity-20">
-                          <Clock size={120} />
-                      </div>
-                  </div>
-              )}
-
-              <div className="space-y-3">
-                 <h3 className="font-bold text-slate-700">Histórico</h3>
-                 {myAppointments.length === 0 ? (
-                     <div className="text-center py-8 text-slate-400">
-                         <Calendar size={48} className="mx-auto mb-3 opacity-20" />
-                         <p>Você ainda não tem agendamentos ou pedidos.</p>
-                     </div>
-                 ) : (
-                     myAppointments.map(app => (
-                         <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
-                             <div>
-                                 <h4 className={`font-bold ${app.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{app.serviceName}</h4>
-                                 <p className="text-xs text-slate-500">{new Date(app.date + 'T12:00:00').toLocaleDateString()} • {app.time}</p>
-                             </div>
-                             <div className="text-right">
-                                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                                     app.status === 'scheduled' ? 'bg-green-100 text-green-700' : 
-                                     app.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-                                 }`}>
-                                     {app.status === 'scheduled' ? 'Confirmado' : app.status === 'cancelled' ? 'Cancelado' : 'Concluído'}
-                                 </span>
-                                 {app.status === 'scheduled' && (
-                                     <button onClick={() => initiateCancelAppointment(app.id)} className="block mt-2 text-[10px] text-red-500 underline">Cancelar</button>
-                                 )}
-                             </div>
-                         </div>
-                     ))
-                 )}
+                  ))}
               </div>
-              
-              <button 
-                 onClick={() => setIsBookingMode(true)}
-                 className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-black transition flex items-center justify-center gap-2"
-              >
-                  <Plus size={20} /> Novo Agendamento
-              </button>
-          </div>
-      );
-  };
-
-  const renderClientBookingWizard = () => (
-    <div className="pb-24 animate-fadeIn">
-      {/* Header for booking flow */}
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => { 
-           if (bookingStep > 0) setBookingStep(bookingStep - 1);
-           else { setIsBookingMode(false); } // Go back to Dashboard or LP
-        }} className="p-2 hover:bg-slate-100 rounded-full">
-           <ChevronLeft size={24} className="text-slate-600" />
-        </button>
-        <div>
-           <h2 className="text-xl font-bold text-slate-800">
-             {bookingStep === 0 && 'Escolha o Serviço'}
-             {bookingStep === 1 && 'Escolha o Profissional'}
-             {bookingStep === 2 && 'Data e Hora'}
-             {bookingStep === 3 && 'Confirmação'}
-           </h2>
-           <div className="flex gap-1 mt-1">
-              {[0,1,2,3].map(step => (
-                 <div key={step} className={`h-1 rounded-full flex-1 transition-all ${step <= bookingStep ? 'bg-rose-500' : 'bg-slate-200'}`} />
-              ))}
-           </div>
-        </div>
+          )}
       </div>
-
-      {bookingStep === 0 && (
-        <div className="space-y-4 pb-24">
-          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Serviços</h3>
-          {services.map(service => {
-             const isSelected = selectedService?.id === service.id;
-             return (
-                 <div 
-                   key={service.id} 
-                   onClick={() => setSelectedService(service)}
-                   className={`bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center cursor-pointer transition ${isSelected ? 'border-rose-600 ring-1 ring-rose-600 bg-rose-50' : 'border-slate-100 hover:border-rose-200'}`}
-                 >
-                    <div>
-                       <h3 className={`font-bold ${isSelected ? 'text-rose-700' : 'text-slate-800'}`}>{service.name}</h3>
-                       <p className="text-xs text-slate-500 mt-1">{service.duration} min • {service.description}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className={`font-bold ${isSelected ? 'text-rose-700' : 'text-slate-600'}`}>{settings.currency} {service.price}</span>
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-rose-600' : 'border-slate-300'}`}>
-                            {isSelected && <div className="w-2.5 h-2.5 bg-rose-600 rounded-full" />}
-                        </div>
-                    </div>
-                 </div>
-             );
-          })}
-          
-          {/* Products Upsell Section */}
-           <div className="mt-8 border-t border-slate-100 pt-6">
-             <h3 className="font-bold text-lg text-slate-800 mb-3 flex items-center gap-2"><ShoppingBag size={18} /> Adicionar Produtos?</h3>
-             <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-                {products.map(product => {
-                    const countInCart = getCartCount(product.id);
-                    const isOutOfStock = product.stock <= 0;
-                    
-                    return (
-                        <div key={product.id} className={`shrink-0 w-44 bg-white border rounded-xl p-3 flex flex-col ${countInCart > 0 ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-100'} ${isOutOfStock ? 'opacity-60 grayscale' : ''}`}>
-                           <div className="h-28 bg-slate-100 rounded-lg mb-2 overflow-hidden relative">
-                              {product.photoUrl && <img src={product.photoUrl} className="w-full h-full object-cover" />}
-                              {isOutOfStock && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-bold uppercase">Esgotado</div>}
-                           </div>
-                           <h4 className="font-bold text-sm truncate">{product.name}</h4>
-                           <p className="text-xs text-slate-500 mb-3">{settings.currency} {product.price}</p>
-                           
-                           {isOutOfStock ? (
-                               <button disabled className="mt-auto w-full py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed">
-                                   Indisponível
-                               </button>
-                           ) : (
-                               countInCart > 0 ? (
-                                   <div className="mt-auto flex items-center justify-between bg-rose-50 rounded-lg p-1">
-                                       <button onClick={(e) => { e.stopPropagation(); handleRemoveOneFromCart(product.id); }} className="p-1 text-rose-600 hover:bg-rose-200 rounded">
-                                           <Minus size={14} />
-                                       </button>
-                                       <span className="text-xs font-bold text-rose-700">{countInCart}</span>
-                                       <button onClick={(e) => { e.stopPropagation(); handleAddToCart(product); }} className="p-1 text-rose-600 hover:bg-rose-200 rounded">
-                                           <Plus size={14} />
-                                       </button>
-                                   </div>
-                               ) : (
-                                   <button 
-                                      onClick={(e) => { e.stopPropagation(); handleAddToCart(product); }}
-                                      className="mt-auto w-full py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white transition hover:bg-black"
-                                   >
-                                      Adicionar
-                                   </button>
-                               )
-                           )}
-                        </div>
-                    );
-                })}
-             </div>
-           </div>
-           
-           {/* Fixed Bottom Action for Step 0 */}
-           <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 p-4 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-               <button 
-                 disabled={!selectedService}
-                 onClick={() => setBookingStep(1)}
-                 className={`w-full py-4 rounded-xl font-bold flex items-center justify-between px-6 transition ${selectedService ? 'bg-rose-600 text-white shadow-lg hover:bg-rose-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-               >
-                 <span>Continuar</span>
-                 {selectedService && (
-                    <span className="bg-white/20 px-2 py-1 rounded text-sm">
-                        {settings.currency} {((selectedService.price) + cart.reduce((acc, item) => acc + item.price, 0)).toFixed(2)}
-                    </span>
-                 )}
-                 {!selectedService && <ArrowRight size={18} />}
-               </button>
-           </div>
-        </div>
-      )}
-
-      {bookingStep === 1 && (
-        <div className="grid grid-cols-2 gap-4">
-           <div 
-              onClick={() => { setSelectedEmployee(null); setBookingStep(2); }}
-              className="bg-slate-50 p-6 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-center cursor-pointer hover:border-rose-400 hover:bg-rose-50 transition min-h-[160px]"
-           >
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-2 text-slate-400">
-                <Users size={24} />
-              </div>
-              <span className="font-bold text-slate-700">Sem preferência</span>
-              <span className="text-xs text-slate-400">Primeiro disponível</span>
-           </div>
-           {employees.map(emp => (
-              <div 
-                key={emp.id}
-                onClick={() => { setSelectedEmployee(emp); setBookingStep(2); }}
-                className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center text-center cursor-pointer hover:border-rose-500 transition relative overflow-hidden group"
-              >
-                 <div className="w-16 h-16 rounded-full bg-slate-100 mb-3 overflow-hidden border-2 border-white shadow-sm">
-                    {emp.photoUrl ? <img src={emp.photoUrl} className="w-full h-full object-cover" /> : <User className="w-full h-full p-4 text-slate-300" />}
-                 </div>
-                 <h3 className="font-bold text-slate-800 text-sm">{emp.name}</h3>
-                 <p className="text-xs text-rose-500 font-medium">{emp.role}</p>
-                 <div className="absolute inset-0 border-2 border-rose-500 rounded-xl opacity-0 group-hover:opacity-100 transition pointer-events-none"></div>
-              </div>
-           ))}
-        </div>
-      )}
-
-      {bookingStep === 2 && (
-        <div className="space-y-6">
-           <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-             <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-               <CalendarDays size={18} className="text-rose-500" /> Selecione a Data
-             </label>
-             <input 
-               type="date" 
-               className="w-full p-3 bg-slate-50 rounded-lg border-none focus:ring-2 focus:ring-rose-500"
-               value={selectedDate}
-               min={new Date().toISOString().split('T')[0]}
-               onChange={(e) => setSelectedDate(e.target.value)}
-             />
-           </div>
-
-           <div>
-              <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-                <Clock size={18} className="text-rose-500" /> Horários Disponíveis
-              </label>
-              <div className="grid grid-cols-4 gap-3">
-                 {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map(time => {
-                    // Simple check if taken (mock logic)
-                    const isTaken = appointments.some(a => a.date === selectedDate && a.time === time && a.status !== 'cancelled');
-                    return (
-                        <button 
-                           key={time} 
-                           disabled={isTaken}
-                           onClick={() => { setSelectedTime(time); setBookingStep(3); }}
-                           className={`py-2 rounded-lg text-sm font-bold transition ${
-                               isTaken 
-                               ? 'bg-slate-100 text-slate-300 cursor-not-allowed decoration-slice line-through' 
-                               : 'bg-white border border-slate-200 text-slate-700 hover:border-rose-500 hover:text-rose-600'
-                           }`}
-                        >
-                           {time}
-                        </button>
-                    );
-                 })}
-              </div>
-           </div>
-        </div>
-      )}
-
-      {bookingStep === 3 && renderConfirmationStep()}
-    </div>
   );
 
+  const renderLandingPage = () => {
+    if (!currentSalonMetadata) return <div className="p-10 text-center">Carregando...</div>;
+    return (
+      <div className="animate-fadeIn -m-4 pb-20">
+          <div className="relative h-64 w-full">
+              <img src={currentSalonMetadata.coverUrl} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+              <div className="absolute bottom-0 left-0 p-6 text-white w-full">
+                  <div className="flex justify-between items-end">
+                      <div>
+                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider mb-2 inline-block">
+                              {currentSalonMetadata.category}
+                          </span>
+                          <h1 className="text-3xl font-bold mb-1">{currentSalonMetadata.name}</h1>
+                          <p className="text-white/80 text-sm flex items-center gap-1">
+                              <MapPinIcon size={14} /> {currentSalonMetadata.location}
+                          </p>
+                      </div>
+                      <div className="text-right">
+                           <div className="flex items-center gap-1 bg-white/20 backdrop-blur-md px-2 py-1 rounded-lg">
+                               <Star size={16} className="text-amber-400 fill-amber-400" />
+                               <span className="font-bold">{currentSalonMetadata.rating}</span>
+                           </div>
+                      </div>
+                  </div>
+              </div>
+              
+              <button onClick={() => handleBackToMarketplace()} className="absolute top-6 left-6 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
+                  <ArrowLeft size={24} />
+              </button>
+              <button className="absolute top-6 right-6 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
+                  <Share2 size={24} />
+              </button>
+          </div>
+
+          <div className="p-6 bg-white rounded-t-3xl -mt-6 relative z-10 space-y-8">
+               <div className="flex justify-around border-b border-slate-100 pb-6">
+                   <div className="text-center">
+                       <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-2"><Scissors size={20} /></div>
+                       <p className="text-xs font-bold text-slate-700">Serviços</p>
+                   </div>
+                   <div className="text-center">
+                       <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2"><Users size={20} /></div>
+                       <p className="text-xs font-bold text-slate-700">Equipe</p>
+                   </div>
+                    <div className="text-center">
+                       <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2"><MapPinIcon size={20} /></div>
+                       <p className="text-xs font-bold text-slate-700">Local</p>
+                   </div>
+               </div>
+
+               <div>
+                   <h3 className="font-bold text-lg text-slate-800 mb-4">Sobre</h3>
+                   <p className="text-slate-500 text-sm leading-relaxed">
+                       Bem-vindo ao {currentSalonMetadata.name}. Oferecemos os melhores serviços de {currentSalonMetadata.category} da região de {currentSalonMetadata.location}. 
+                       Nossa equipe é especializada e o ambiente é preparado para seu conforto.
+                   </p>
+               </div>
+               
+               <div className="bg-slate-50 p-4 rounded-xl">
+                   <h3 className="font-bold text-sm text-slate-800 mb-2">Horário de Funcionamento</h3>
+                   <div className="flex justify-between text-sm text-slate-500">
+                       <span>Segunda - Sexta</span>
+                       <span className="font-medium text-slate-700">{settings.openTime} - {settings.closeTime}</span>
+                   </div>
+                   <div className="flex justify-between text-sm text-slate-500 mt-1">
+                       <span>Sábado</span>
+                       <span className="font-medium text-slate-700">09:00 - 18:00</span>
+                   </div>
+               </div>
+          </div>
+
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 z-20 md:max-w-3xl md:mx-auto">
+              <button 
+                  onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }}
+                  className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:bg-rose-700 transition"
+              >
+                  Agendar Horário
+              </button>
+          </div>
+      </div>
+    );
+  };
+
   const renderClientView = () => {
-      // Split view: Dashboard (My Appointments) vs Booking Wizard
-      if (!isBookingMode) {
-          return renderClientDashboard();
-      }
-      return renderClientBookingWizard();
+    if (!currentUser && !isBookingMode) return renderClientAuth();
+
+    // Booking Wizard
+    if (isBookingMode) {
+        return (
+            <div className="animate-fadeIn pb-24">
+                <div className="mb-6 flex items-center gap-4">
+                    <button onClick={() => { if(bookingStep > 0) setBookingStep(bookingStep-1); else setIsBookingMode(false); }} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><ArrowLeft size={20} /></button>
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800">
+                            {bookingStep === 0 && 'Escolha o Serviço'}
+                            {bookingStep === 1 && 'Escolha o Profissional'}
+                            {bookingStep === 2 && 'Data e Hora'}
+                            {bookingStep === 3 && 'Confirmar'}
+                        </h2>
+                        <div className="flex gap-1 mt-1">
+                            {[0,1,2,3].map(step => (
+                                <div key={step} className={`h-1 w-8 rounded-full ${step <= bookingStep ? 'bg-rose-600' : 'bg-slate-200'}`}></div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {bookingStep === 0 && (
+                     <div className="space-y-3">
+                         {services.map(s => (
+                             <div key={s.id} onClick={() => { setSelectedService(s); setBookingStep(1); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center cursor-pointer hover:border-rose-300 transition group">
+                                 <div>
+                                     <h3 className="font-bold text-slate-800 group-hover:text-rose-600 transition">{s.name}</h3>
+                                     <p className="text-xs text-slate-500">{s.duration} min • {s.description}</p>
+                                 </div>
+                                 <span className="font-bold text-slate-800">{settings.currency} {s.price}</span>
+                             </div>
+                         ))}
+                     </div>
+                )}
+
+                {bookingStep === 1 && (
+                    <div className="grid grid-cols-2 gap-4">
+                        <div onClick={() => { setSelectedEmployee(null); setBookingStep(2); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:border-rose-300 transition text-center flex flex-col items-center justify-center min-h-[160px]">
+                            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-3"><Users size={24}/></div>
+                            <h3 className="font-bold text-slate-800 text-sm">Qualquer Profissional</h3>
+                            <p className="text-xs text-slate-400 mt-1">Maior disponibilidade</p>
+                        </div>
+                        {employees.map(e => (
+                             <div key={e.id} onClick={() => { setSelectedEmployee(e); setBookingStep(2); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:border-rose-300 transition text-center flex flex-col items-center">
+                                 <div className="w-16 h-16 bg-slate-100 rounded-full mb-3 overflow-hidden">
+                                     {e.photoUrl ? <img src={e.photoUrl} className="w-full h-full object-cover"/> : <User className="w-full h-full p-4 text-slate-400"/>}
+                                 </div>
+                                 <h3 className="font-bold text-slate-800 text-sm">{e.name}</h3>
+                                 <p className="text-xs text-slate-400 mt-1">{e.role}</p>
+                             </div>
+                        ))}
+                    </div>
+                )}
+
+                {bookingStep === 2 && (
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Selecione a Data</label>
+                            <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">
+                                {Array.from({length: 14}).map((_, i) => {
+                                    const d = new Date();
+                                    d.setDate(d.getDate() + i);
+                                    const isSelected = d.toISOString().split('T')[0] === selectedDate;
+                                    return (
+                                        <button 
+                                            key={i} 
+                                            onClick={() => setSelectedDate(d.toISOString().split('T')[0])}
+                                            className={`min-w-[60px] p-3 rounded-xl border flex flex-col items-center transition ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'}`}
+                                        >
+                                            <span className="text-[10px] font-bold uppercase">{d.toLocaleDateString('pt-BR', {weekday: 'short'}).replace('.','')}</span>
+                                            <span className="text-lg font-bold">{d.getDate()}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Horários Disponíveis</label>
+                            <div className="grid grid-cols-4 gap-3">
+                                {['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00','18:00'].map(time => (
+                                    <button 
+                                        key={time}
+                                        onClick={() => setSelectedTime(time)}
+                                        className={`py-2 rounded-lg text-sm font-bold border transition ${selectedTime === time ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'}`}
+                                    >
+                                        {time}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <button 
+                            disabled={!selectedTime}
+                            onClick={() => setBookingStep(3)}
+                            className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Continuar
+                        </button>
+                    </div>
+                )}
+
+                {bookingStep === 3 && selectedService && (
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                        <div className="text-center border-b border-slate-100 pb-6">
+                             <div className="w-16 h-16 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                                 <CheckCircle2 size={32} />
+                             </div>
+                             <h3 className="text-xl font-bold text-slate-800">Confirmar Agendamento</h3>
+                             <p className="text-slate-500 text-sm">Revise os detalhes abaixo</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 text-sm">Serviço</span>
+                                <span className="font-bold text-slate-800">{selectedService.name}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 text-sm">Profissional</span>
+                                <span className="font-bold text-slate-800">{selectedEmployee?.name || 'Preferência do Salão'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 text-sm">Data e Hora</span>
+                                <span className="font-bold text-slate-800">{selectedDate.split('-').reverse().join('/')} às {selectedTime}</span>
+                            </div>
+                            {cart.length > 0 && (
+                                <div className="border-t border-dashed border-slate-200 pt-4">
+                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Produtos Adicionais</p>
+                                    {cart.map(p => (
+                                        <div key={p.id} className="flex justify-between text-sm mb-1">
+                                            <span className="text-slate-600">{p.name}</span>
+                                            <span className="font-medium text-slate-800">{settings.currency} {p.price}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* Coupon Input */}
+                        <div className="bg-slate-50 p-3 rounded-xl flex gap-2">
+                             <input 
+                                type="text" 
+                                placeholder="CUPOM DE DESCONTO" 
+                                className="flex-1 bg-transparent border-none text-sm font-bold uppercase focus:ring-0 placeholder:text-slate-400"
+                                value={couponCodeInput}
+                                onChange={e => setCouponCodeInput(e.target.value)}
+                             />
+                             <button onClick={handleApplyCoupon} className="text-rose-600 text-xs font-bold">APLICAR</button>
+                        </div>
+                        {appliedCoupon && (
+                            <p className="text-green-600 text-xs font-bold text-center">
+                                Cupom {appliedCoupon.code} aplicado! (- {appliedCoupon.type === 'percent' ? `${appliedCoupon.discount}%` : `R$ ${appliedCoupon.discount}`})
+                            </p>
+                        )}
+
+                        <div className="border-t border-slate-100 pt-4 flex justify-between items-center">
+                            <span className="font-bold text-slate-500">Total</span>
+                            <span className="text-2xl font-black text-rose-600">
+                                {settings.currency} { 
+                                    (
+                                      (selectedService.price + cart.reduce((a,b)=>a+b.price,0)) - 
+                                      (appliedCoupon ? (appliedCoupon.type === 'fixed' ? appliedCoupon.discount : (selectedService.price + cart.reduce((a,b)=>a+b.price,0)) * appliedCoupon.discount / 100) : 0)
+                                    ).toFixed(2) 
+                                }
+                            </span>
+                        </div>
+
+                        <button 
+                            onClick={handleConfirmBooking}
+                            className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition"
+                        >
+                            Confirmar Agendamento
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }
+    
+    // Client Dashboard (Logged In)
+    return (
+        <div className="animate-fadeIn space-y-6 pb-20">
+             <div className="flex justify-between items-center">
+                 <div>
+                     <h2 className="text-xl font-bold text-slate-800">Olá, {currentUser?.name.split(' ')[0]}</h2>
+                     <p className="text-sm text-slate-500">Bem-vindo de volta!</p>
+                 </div>
+                 <button onClick={handleLogout} className="text-xs font-bold text-slate-400 hover:text-red-500">Sair</button>
+             </div>
+
+             <div className="bg-rose-600 rounded-2xl p-6 text-white shadow-lg shadow-rose-200 relative overflow-hidden">
+                  <div className="relative z-10">
+                      <p className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2">Próximo Agendamento</p>
+                      {appointments.filter(a => a.clientId === currentUser?.id && a.status === 'scheduled').length > 0 ? (
+                          (() => {
+                              const next = appointments.filter(a => a.clientId === currentUser?.id && a.status === 'scheduled').sort((a,b) => a.date.localeCompare(b.date))[0];
+                              return (
+                                  <div>
+                                      <h3 className="text-2xl font-bold mb-1">{next.serviceName}</h3>
+                                      <p className="text-white/90 text-sm mb-4">{next.date.split('-').reverse().join('/')} às {next.time} • com {next.employeeName}</p>
+                                      <button onClick={() => alert('Função de reagendar em breve')} className="bg-white text-rose-600 px-4 py-2 rounded-lg text-xs font-bold">Gerenciar</button>
+                                  </div>
+                              )
+                          })()
+                      ) : (
+                          <div>
+                              <p className="text-lg font-bold mb-4">Nenhum agendamento futuro.</p>
+                              <button onClick={() => setIsBookingMode(true)} className="bg-white text-rose-600 px-4 py-2 rounded-lg text-xs font-bold">Agendar Agora</button>
+                          </div>
+                      )}
+                  </div>
+                  <CalendarDays className="absolute right-4 bottom-4 opacity-20 text-white" size={80} />
+             </div>
+
+             <div>
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800">Histórico</h3>
+                    <button onClick={() => setIsBookingMode(true)} className="text-rose-600 font-bold text-sm flex items-center gap-1"><Plus size={16}/> Novo Agendamento</button>
+                 </div>
+                 <div className="space-y-3">
+                     {appointments.filter(a => a.clientId === currentUser?.id).length === 0 ? (
+                         <p className="text-slate-400 text-sm text-center py-6">Seu histórico aparecerá aqui.</p>
+                     ) : (
+                         appointments.filter(a => a.clientId === currentUser?.id).sort((a,b) => b.createdAt - a.createdAt).map(app => (
+                             <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
+                                 <div>
+                                     <h4 className="font-bold text-slate-800">{app.serviceName}</h4>
+                                     <p className="text-xs text-slate-500">{app.date.split('-').reverse().join('/')} • {app.time}</p>
+                                 </div>
+                                 <div>
+                                     <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${app.status === 'completed' ? 'bg-green-100 text-green-700' : app.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                                         {app.status === 'completed' ? 'Concluído' : app.status === 'scheduled' ? 'Agendado' : 'Cancelado'}
+                                     </span>
+                                 </div>
+                             </div>
+                         ))
+                     )}
+                 </div>
+             </div>
+        </div>
+    );
   };
 
   const clientTab = (view === ViewState.CLIENT_STORE) ? 'store' : (showLandingPage ? 'home' : 'appointments');
@@ -1826,6 +1926,8 @@ const App: React.FC = () => {
     >
       
       {view === ViewState.MARKETPLACE && renderMarketplace()}
+      {view === ViewState.SAAS_LP && renderSaaSLandingPage()}
+      {view === ViewState.SAAS_ADMIN && renderSaaSAdmin()}
       
       {view === ViewState.DASHBOARD && renderAdminDashboard()}
       {view === ViewState.FINANCE && renderFinanceDashboard()}

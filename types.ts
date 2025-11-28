@@ -101,9 +101,23 @@ export interface SalonMetadata {
   location: string;
 }
 
+// SaaS Tenant Interface (For Super Admin)
+export interface Tenant {
+  id: string;
+  slug: string;
+  ownerName: string;
+  email: string;
+  plan: 'free' | 'pro' | 'enterprise';
+  status: 'active' | 'churned';
+  mrr: number; // Monthly Recurring Revenue from this tenant
+  createdAt: number;
+}
+
 export enum ViewState {
-  // Platform Views
+  // SaaS / Platform Views
   MARKETPLACE = 'MARKETPLACE',
+  SAAS_LP = 'SAAS_LP',         // Landing Page to sell the software
+  SAAS_ADMIN = 'SAAS_ADMIN',   // Super Admin Dashboard
   
   // Public Views
   PUBLIC_SALON = 'PUBLIC_SALON',
