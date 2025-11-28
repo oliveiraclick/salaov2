@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ViewState } from '../types';
 import { Scissors, Package, Settings, Users, Store, LayoutDashboard, LogIn, Wallet, Calendar, ShoppingBag } from 'lucide-react';
@@ -12,9 +13,10 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonName, activeClientTab, onClientTabChange }) => {
-  const isPublicMode = currentView === ViewState.PUBLIC_SALON || currentView === ViewState.MARKETPLACE || currentView === ViewState.CLIENT_AUTH || currentView === ViewState.CLIENT_STORE;
+  const isPublicMode = currentView === ViewState.PUBLIC_SALON || currentView === ViewState.MARKETPLACE || currentView === ViewState.CLIENT_AUTH || currentView === ViewState.CLIENT_STORE || currentView === ViewState.SAAS_LP;
   const isMarketplace = currentView === ViewState.MARKETPLACE;
-  const isClientView = isPublicMode && !isMarketplace;
+  const isSaaS_LP = currentView === ViewState.SAAS_LP;
+  const isClientView = isPublicMode && !isMarketplace && !isSaaS_LP;
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState; icon: any; label: string }) => (
     <button
@@ -31,6 +33,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800 font-sans">
       {/* Header */}
+      {!isSaaS_LP && (
       <header className="bg-white shadow-sm sticky top-0 z-20 px-6 py-4 flex justify-between items-center">
         <div>
            {isMarketplace ? (
@@ -50,14 +53,15 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
           </span>
         )}
       </header>
+      )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4 pb-24 max-w-3xl mx-auto w-full">
+      <main className={`flex-1 overflow-y-auto ${isSaaS_LP ? '' : 'p-4 pb-24'} max-w-3xl mx-auto w-full`}>
         {children}
       </main>
 
       {/* Bottom Navigation - Only show for Admin views */}
-      {!isPublicMode && (
+      {!isPublicMode && currentView !== ViewState.SAAS_ADMIN && currentView !== ViewState.SAAS_PLANS && (
         <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] overflow-x-auto">
           <NavItem view={ViewState.DASHBOARD} icon={LayoutDashboard} label="Início" />
           <NavItem view={ViewState.FINANCE} icon={Wallet} label="Financeiro" />

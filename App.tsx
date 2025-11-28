@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant } from './types';
+import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant, SaasPlan } from './types';
 import * as Storage from './services/storage';
 import * as Gemini from './services/gemini';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
-import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase, LayoutList } from 'lucide-react';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.MARKETPLACE);
@@ -27,6 +27,7 @@ const App: React.FC = () => {
 
   // SaaS State
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [saasPlans, setSaasPlans] = useState<SaasPlan[]>([]);
 
   // Public/Landing Page State
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -41,7 +42,7 @@ const App: React.FC = () => {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   
-  const [editingItem, setEditingItem] = useState<Partial<Service | Product | Employee | Transaction | Coupon> | null>(null);
+  const [editingItem, setEditingItem] = useState<Partial<Service | Product | Employee | Transaction | Coupon | SaasPlan> | null>(null);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(null);
 
@@ -66,6 +67,7 @@ const App: React.FC = () => {
     const allSalons = Storage.getPlatformSalons();
     setPlatformSalons(allSalons);
     setTenants(Storage.getTenants());
+    setSaasPlans(Storage.getSaasPlans());
 
     // 2. Check URL Params for deep linking
     const urlParams = new URLSearchParams(window.location.search);
@@ -378,7 +380,35 @@ const App: React.FC = () => {
       setEditingItem(null);
   };
 
-  const handleDelete = (id: string, type: 'service' | 'product' | 'employee' | 'transaction' | 'coupon') => {
+  const handleSavePlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    const item = editingItem as any; // Temporary Any cast for SaasPlan
+    if (!item.name) return;
+
+    // Convert features string to array if it came from input
+    let featuresList = item.features;
+    if (typeof item.features === 'string') {
+        featuresList = item.features.split(',').map((f: string) => f.trim()).filter((f: string) => f.length > 0);
+    }
+
+    const newItem: SaasPlan = {
+        id: item.id || generateId(),
+        name: item.name,
+        price: parseFloat(String(item.price || 0)),
+        features: featuresList || [],
+        isRecommended: item.isRecommended || false
+    };
+
+    const updated = item.id ? saasPlans.map(p => p.id === newItem.id ? newItem : p) : [...saasPlans, newItem];
+    setSaasPlans(updated);
+    Storage.saveSaasPlans(updated);
+    setIsModalOpen(false);
+    setEditingItem(null);
+  };
+
+
+  const handleDelete = (id: string, type: 'service' | 'product' | 'employee' | 'transaction' | 'coupon' | 'plan') => {
     if (confirm('Tem certeza que deseja remover?')) {
       if (type === 'service') {
         const updated = services.filter(s => s.id !== id);
@@ -400,6 +430,10 @@ const App: React.FC = () => {
          const updated = coupons.filter(c => c.id !== id);
          setCoupons(updated);
          Storage.saveCoupons(updated);
+      } else if (type === 'plan') {
+         const updated = saasPlans.filter(p => p.id !== id);
+         setSaasPlans(updated);
+         Storage.saveSaasPlans(updated);
       }
     }
   };
@@ -1008,6 +1042,49 @@ const App: React.FC = () => {
       </div>
   );
 
+  const renderSaasPlans = () => (
+      <div className="space-y-6 animate-fadeIn">
+          <div className="flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  <Ticket size={24} className="text-rose-600"/> Gestão de Planos
+              </h3>
+              <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2">
+                  <Plus size={16} /> Novo Plano
+              </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {saasPlans.map(plan => (
+                  <div key={plan.id} className={`bg-white p-6 rounded-2xl border ${plan.isRecommended ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-100'} shadow-sm relative`}>
+                      {plan.isRecommended && <span className="absolute top-4 right-4 text-[10px] font-bold uppercase bg-rose-100 text-rose-600 px-2 py-1 rounded">Recomendado</span>}
+                      <h4 className="text-lg font-bold text-slate-800">{plan.name}</h4>
+                      <p className="text-3xl font-bold text-slate-900 mt-2">R$ {plan.price}<span className="text-sm text-slate-400 font-normal">/mês</span></p>
+                      
+                      <ul className="mt-4 space-y-2 mb-6">
+                          {plan.features.map((feature, i) => (
+                              <li key={i} className="text-sm text-slate-600 flex items-center gap-2">
+                                  <CheckCircle2 size={14} className="text-green-500" /> {feature}
+                              </li>
+                          ))}
+                      </ul>
+
+                      <div className="flex gap-2">
+                           <button onClick={() => { setEditingItem({...plan, features: plan.features.join(', ')} as any); setIsModalOpen(true); }} className="flex-1 py-2 rounded-lg bg-slate-50 text-slate-600 font-bold hover:bg-slate-100 flex items-center justify-center gap-1">
+                               <Pencil size={14} /> Editar
+                           </button>
+                           <button onClick={() => handleDelete(plan.id, 'plan')} className="py-2 px-3 rounded-lg bg-red-50 text-red-500 font-bold hover:bg-red-100">
+                               <Trash2 size={14} />
+                           </button>
+                      </div>
+                  </div>
+              ))}
+          </div>
+          <button onClick={() => setView(ViewState.SAAS_ADMIN)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-800">
+              <ArrowLeft size={16} /> Voltar ao Dashboard
+          </button>
+      </div>
+  );
+
   const renderSaaSAdmin = () => {
     const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
     const totalTenants = tenants.length;
@@ -1026,6 +1103,12 @@ const App: React.FC = () => {
            <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-sm font-bold text-slate-500 hover:text-slate-800">
               Sair
            </button>
+        </div>
+
+        {/* Action Tabs */}
+        <div className="flex gap-4 border-b border-slate-200 pb-1">
+            <button className="text-rose-600 border-b-2 border-rose-600 pb-2 font-bold px-2">Dashboard</button>
+            <button onClick={() => setView(ViewState.SAAS_PLANS)} className="text-slate-500 hover:text-slate-800 pb-2 font-medium px-2 flex items-center gap-1"><Ticket size={16}/> Gerenciar Planos</button>
         </div>
 
         {/* Stats */}
@@ -1078,7 +1161,7 @@ const App: React.FC = () => {
                            <p className="text-xs text-slate-400">{tenant.email}</p>
                         </td>
                         <td className="px-6 py-4">
-                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${tenant.plan === 'pro' ? 'bg-purple-100 text-purple-700' : tenant.plan === 'enterprise' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${tenant.plan === 'Pro' ? 'bg-purple-100 text-purple-700' : tenant.plan === 'Enterprise' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
                               {tenant.plan}
                            </span>
                         </td>
@@ -1117,7 +1200,7 @@ const App: React.FC = () => {
                  </div>
                  <div className="flex gap-4">
                      <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-slate-600 font-medium hover:text-rose-600">Entrar</button>
-                     <button onClick={() => alert('Função de cadastro real viria aqui.')} className="bg-rose-600 text-white px-5 py-2 rounded-full font-bold hover:bg-rose-700 transition shadow-lg shadow-rose-200">Começar Grátis</button>
+                     <button onClick={() => {}} className="bg-rose-600 text-white px-5 py-2 rounded-full font-bold hover:bg-rose-700 transition shadow-lg shadow-rose-200">Começar Grátis</button>
                  </div>
              </div>
           </header>
@@ -1133,10 +1216,10 @@ const App: React.FC = () => {
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
                   <button onClick={() => {
-                      // Simulating Tenant Creation
+                      // Simulating Tenant Creation with Default Plan
                       const newSlug = `salao-novo-${Math.floor(Math.random() * 1000)}`;
                       const newTenant: Tenant = {
-                          id: generateId(), slug: newSlug, ownerName: 'Você', email: 'voce@exemplo.com', plan: 'free', status: 'active', mrr: 0, createdAt: Date.now()
+                          id: generateId(), slug: newSlug, ownerName: 'Você', email: 'voce@exemplo.com', plan: 'Start', status: 'active', mrr: 0, createdAt: Date.now()
                       };
                       Storage.addTenant(newTenant);
                       handleNavigateToSalon(newSlug);
@@ -1177,6 +1260,49 @@ const App: React.FC = () => {
                       </div>
                   </div>
               </div>
+          </section>
+
+          {/* Dynamic Pricing Section */}
+          <section className="py-24 px-6 bg-slate-50">
+             <div className="max-w-4xl mx-auto text-center mb-12">
+                <h2 className="text-3xl font-bold text-slate-800 mb-4">Planos para todos os tamanhos</h2>
+                <p className="text-slate-500">Escolha o ideal para o seu momento.</p>
+             </div>
+             <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8 px-6">
+                 {saasPlans.map(plan => (
+                     <div key={plan.id} className={`bg-white rounded-3xl p-8 border ${plan.isRecommended ? 'border-rose-500 shadow-xl shadow-rose-100 scale-105 relative z-10' : 'border-slate-100 shadow-lg'}`}>
+                         {plan.isRecommended && (
+                             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-rose-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
+                                 Mais Escolhido
+                             </div>
+                         )}
+                         <h3 className="text-xl font-bold text-slate-800 text-center">{plan.name}</h3>
+                         <div className="text-center my-6">
+                             <span className="text-4xl font-black text-slate-900">R$ {plan.price}</span>
+                             <span className="text-slate-400 font-medium">/mês</span>
+                         </div>
+                         <ul className="space-y-4 mb-8">
+                             {plan.features.map((feature, i) => (
+                                 <li key={i} className="flex items-center gap-3 text-slate-600 text-sm">
+                                     <CheckCircle2 size={18} className="text-green-500 flex-shrink-0" />
+                                     {feature}
+                                 </li>
+                             ))}
+                         </ul>
+                         <button onClick={() => {
+                            const newSlug = `salao-${plan.name.toLowerCase()}-${Math.floor(Math.random() * 1000)}`;
+                            const newTenant: Tenant = {
+                                id: generateId(), slug: newSlug, ownerName: 'Novo Parceiro', email: 'contato@salao.com', plan: plan.name, status: 'active', mrr: plan.price, createdAt: Date.now()
+                            };
+                            Storage.addTenant(newTenant);
+                            handleNavigateToSalon(newSlug);
+                            setTimeout(() => handleAdminLogin(), 100);
+                         }} className={`w-full py-3 rounded-xl font-bold transition ${plan.isRecommended ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-200' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>
+                             Começar Agora
+                         </button>
+                     </div>
+                 ))}
+             </div>
           </section>
 
           {/* Footer */}
@@ -1593,6 +1719,7 @@ const App: React.FC = () => {
                                <Star size={16} className="text-amber-400 fill-amber-400" />
                                <span className="font-bold">{currentSalonMetadata.rating}</span>
                            </div>
+                           <button onClick={() => setIsLoginModalOpen(true)} className="mt-2 bg-white/20 p-2 rounded-full text-white hover:bg-white/30 backdrop-blur-md"><Lock size={16}/></button>
                       </div>
                   </div>
               </div>
@@ -1642,11 +1769,12 @@ const App: React.FC = () => {
                </div>
           </div>
 
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 z-20 md:max-w-3xl md:mx-auto">
+          <div className="fixed bottom-20 left-4 right-4 z-40 md:max-w-3xl md:mx-auto">
               <button 
                   onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }}
-                  className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:bg-rose-700 transition"
+                  className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:bg-rose-700 transition flex items-center justify-center gap-2"
               >
+                  <Calendar size={20} />
                   Agendar Horário
               </button>
           </div>
@@ -1679,17 +1807,69 @@ const App: React.FC = () => {
                 </div>
 
                 {bookingStep === 0 && (
-                     <div className="space-y-3">
-                         {services.map(s => (
-                             <div key={s.id} onClick={() => { setSelectedService(s); setBookingStep(1); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center cursor-pointer hover:border-rose-300 transition group">
+                     <div className="space-y-3 pb-24">
+                         {services.map(s => {
+                             const isSelected = selectedService?.id === s.id;
+                             return (
+                             <div key={s.id} onClick={() => setSelectedService(s)} className={`bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center cursor-pointer transition group ${isSelected ? 'border-rose-500 ring-1 ring-rose-500 bg-rose-50' : 'border-slate-100 hover:border-rose-300'}`}>
                                  <div>
-                                     <h3 className="font-bold text-slate-800 group-hover:text-rose-600 transition">{s.name}</h3>
+                                     <h3 className="font-bold text-slate-800">{s.name}</h3>
                                      <p className="text-xs text-slate-500">{s.duration} min • {s.description}</p>
                                  </div>
                                  <span className="font-bold text-slate-800">{settings.currency} {s.price}</span>
                              </div>
-                         ))}
+                             )
+                         })}
+                         
+                         {/* Product Add-ons in Step 0 */}
+                         <div className="mt-8">
+                             <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                <ShoppingBag size={18} className="text-rose-500" /> Adicionar Produtos
+                             </h3>
+                             <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                                 {products.map(p => {
+                                     const qty = getCartCount(p.id);
+                                     const isOutOfStock = p.stock <= 0;
+                                     return (
+                                     <div key={p.id} className="min-w-[140px] bg-white border border-slate-100 rounded-xl p-3 shadow-sm flex flex-col">
+                                         <div className="h-20 bg-slate-100 rounded-lg mb-2 overflow-hidden relative">
+                                             {p.photoUrl && <img src={p.photoUrl} className="w-full h-full object-cover"/>}
+                                             {isOutOfStock && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-[10px] font-bold uppercase">Esgotado</div>}
+                                         </div>
+                                         <p className="font-bold text-xs truncate">{p.name}</p>
+                                         <p className="text-xs text-slate-500 mb-2">{settings.currency} {p.price}</p>
+                                         {!isOutOfStock && (
+                                              qty === 0 ? (
+                                                  <button onClick={(e) => { e.stopPropagation(); handleAddToCart(p); }} className="mt-auto bg-slate-900 text-white text-[10px] py-1.5 rounded-lg font-bold">Adicionar</button>
+                                              ) : (
+                                                  <div className="mt-auto flex items-center justify-between bg-rose-50 rounded-lg p-1">
+                                                      <button onClick={(e) => { e.stopPropagation(); handleRemoveOneFromCart(p.id); }} className="p-0.5 text-rose-600"><Minus size={14}/></button>
+                                                      <span className="text-xs font-bold text-rose-700">{qty}</span>
+                                                      <button onClick={(e) => { e.stopPropagation(); handleAddToCart(p); }} className="p-0.5 text-rose-600"><Plus size={14}/></button>
+                                                  </div>
+                                              )
+                                         )}
+                                     </div>
+                                     )
+                                 })}
+                             </div>
+                         </div>
                      </div>
+                )}
+                
+                {/* Fixed Continue Button for Step 0 */}
+                {bookingStep === 0 && selectedService && (
+                    <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 p-4 z-50 md:max-w-3xl md:mx-auto">
+                        <button 
+                            onClick={() => setBookingStep(1)}
+                            className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition flex justify-between px-6"
+                        >
+                            <span>Continuar</span>
+                            <span className="bg-white/20 px-2 py-0.5 rounded text-sm">
+                                {settings.currency} { (selectedService.price + cart.reduce((a,b) => a + b.price, 0)).toFixed(2) }
+                            </span>
+                        </button>
+                    </div>
                 )}
 
                 {bookingStep === 1 && (
@@ -1928,6 +2108,7 @@ const App: React.FC = () => {
       {view === ViewState.MARKETPLACE && renderMarketplace()}
       {view === ViewState.SAAS_LP && renderSaaSLandingPage()}
       {view === ViewState.SAAS_ADMIN && renderSaaSAdmin()}
+      {view === ViewState.SAAS_PLANS && renderSaasPlans()}
       
       {view === ViewState.DASHBOARD && renderAdminDashboard()}
       {view === ViewState.FINANCE && renderFinanceDashboard()}
@@ -2008,6 +2189,7 @@ const App: React.FC = () => {
                   {view === ViewState.SERVICES && (editingItem?.id ? 'Editar Serviço' : 'Novo Serviço')}
                   {view === ViewState.PRODUCTS && (editingItem?.id ? 'Editar Produto' : 'Novo Produto')}
                   {view === ViewState.TEAM && (editingItem?.id ? 'Editar Profissional' : 'Novo Profissional')}
+                  {view === ViewState.SAAS_PLANS && (editingItem?.id ? 'Editar Plano' : 'Novo Plano SaaS')}
                 </h3>
                 <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"> <X size={24} /> </button>
               </div>
@@ -2036,6 +2218,28 @@ const App: React.FC = () => {
                        </div>
                        <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar Cupom</button>
                    </form>
+              )}
+              {/* SaaS Plan Form */}
+              {view === ViewState.SAAS_PLANS && (
+                  <form onSubmit={handleSavePlan} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700">Nome do Plano</label>
+                          <input type="text" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as any)?.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value} as any)} />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700">Preço Mensal (R$)</label>
+                          <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as any)?.price || ''} onChange={e => setEditingItem({...editingItem, price: parseFloat(e.target.value)} as any)} />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700">Benefícios (separados por vírgula)</label>
+                          <textarea className="mt-1 block w-full p-2 border rounded-md" rows={4} value={(editingItem as any)?.features || ''} onChange={e => setEditingItem({...editingItem, features: e.target.value} as any)} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                          <input type="checkbox" id="isRecommended" checked={(editingItem as any)?.isRecommended || false} onChange={e => setEditingItem({...editingItem, isRecommended: e.target.checked} as any)} />
+                          <label htmlFor="isRecommended" className="text-sm font-medium text-slate-700">Marcar como Recomendado</label>
+                      </div>
+                      <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar Plano</button>
+                  </form>
               )}
 
             </div>

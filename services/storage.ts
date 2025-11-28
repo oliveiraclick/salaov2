@@ -1,5 +1,5 @@
 
-import { Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant } from '../types';
+import { Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant, SaasPlan } from '../types';
 
 // --- NAMESPACE MANAGEMENT ---
 let currentNamespace = 'demo_salon';
@@ -24,7 +24,8 @@ const KEYS = {
 };
 
 const SAAS_KEYS = {
-  TENANTS: 'saas_tenants'
+  TENANTS: 'saas_tenants',
+  PLANS: 'saas_plans'
 };
 
 // --- HELPER ---
@@ -82,10 +83,36 @@ export const MOCK_PLATFORM_SALONS: SalonMetadata[] = [
 // --- SAAS TENANT MOCK DATA ---
 const getMockTenants = (): Tenant[] => {
   return [
-    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 100000000 },
-    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'enterprise', status: 'active', mrr: 199.00, createdAt: Date.now() - 50000000 },
-    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'free', status: 'active', mrr: 0, createdAt: Date.now() - 20000000 },
-    { id: '4', slug: 'corte-kids', ownerName: 'Pedro Santos', email: 'pedro@kids.com', plan: 'pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 10000000 }
+    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'Pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 100000000 },
+    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'Enterprise', status: 'active', mrr: 199.00, createdAt: Date.now() - 50000000 },
+    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'Start', status: 'active', mrr: 0, createdAt: Date.now() - 20000000 },
+    { id: '4', slug: 'corte-kids', ownerName: 'Pedro Santos', email: 'pedro@kids.com', plan: 'Pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 10000000 }
+  ];
+};
+
+const getMockPlans = (): SaasPlan[] => {
+  return [
+    { 
+      id: '1', 
+      name: 'Start', 
+      price: 0, 
+      features: ['Agenda Simples', 'Link Personalizado', 'Até 50 agendamentos/mês'], 
+      isRecommended: false 
+    },
+    { 
+      id: '2', 
+      name: 'Pro', 
+      price: 99, 
+      features: ['Agenda Ilimitada', 'Controle Financeiro', 'Gestão de Estoque', 'Site Próprio'], 
+      isRecommended: true 
+    },
+    { 
+      id: '3', 
+      name: 'Enterprise', 
+      price: 199, 
+      features: ['Múltiplos Profissionais', 'Dashboard Avançado', 'Campanhas de Marketing', 'Suporte Prioritário'], 
+      isRecommended: false 
+    }
   ];
 };
 
@@ -109,6 +136,22 @@ export const addTenant = (tenant: Tenant) => {
   const tenants = getTenants();
   tenants.push(tenant);
   saveTenants(tenants);
+};
+
+// --- SAAS PLANS MANAGEMENT ---
+
+export const getSaasPlans = (): SaasPlan[] => {
+  const data = localStorage.getItem(SAAS_KEYS.PLANS);
+  const parsed = safeParse<SaasPlan[] | null>(data, null);
+  if (parsed) return parsed;
+  
+  const mock = getMockPlans();
+  saveSaasPlans(mock);
+  return mock;
+};
+
+export const saveSaasPlans = (plans: SaasPlan[]) => {
+  localStorage.setItem(SAAS_KEYS.PLANS, JSON.stringify(plans));
 };
 
 

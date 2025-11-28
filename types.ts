@@ -107,10 +107,19 @@ export interface Tenant {
   slug: string;
   ownerName: string;
   email: string;
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: string; // Changed to string to match dynamic plan names
   status: 'active' | 'churned';
   mrr: number; // Monthly Recurring Revenue from this tenant
   createdAt: number;
+}
+
+// SaaS Plan Interface
+export interface SaasPlan {
+  id: string;
+  name: string;
+  price: number;
+  features: string[];
+  isRecommended: boolean;
 }
 
 export enum ViewState {
@@ -118,6 +127,7 @@ export enum ViewState {
   MARKETPLACE = 'MARKETPLACE',
   SAAS_LP = 'SAAS_LP',         // Landing Page to sell the software
   SAAS_ADMIN = 'SAAS_ADMIN',   // Super Admin Dashboard
+  SAAS_PLANS = 'SAAS_PLANS',   // Manage SaaS Plans
   
   // Public Views
   PUBLIC_SALON = 'PUBLIC_SALON',
