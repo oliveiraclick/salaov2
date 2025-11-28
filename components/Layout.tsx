@@ -1,0 +1,135 @@
+
+import React from 'react';
+import { ViewState } from '../types';
+import { Scissors, Package, Settings, Users, Store, LayoutDashboard, LogIn, Wallet, Calendar, ShoppingBag } from 'lucide-react';
+
+interface LayoutProps {
+  children: React.ReactNode;
+  currentView: ViewState;
+  setView: (view: ViewState) => void;
+  salonName?: string;
+  activeClientTab?: 'home' | 'appointments' | 'store';
+  onClientTabChange?: (tab: 'home' | 'appointments' | 'store') => void;
+}
+
+const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonName, activeClientTab, onClientTabChange }) => {
+  const isPublicMode = currentView === ViewState.PUBLIC_SALON || currentView === ViewState.MARKETPLACE || currentView === ViewState.CLIENT_AUTH || currentView === ViewState.CLIENT_STORE;
+  const isMarketplace = currentView === ViewState.MARKETPLACE;
+  const isClientView = isPublicMode && !isMarketplace;
+
+  const NavItem = ({ view, icon: Icon, label }: { view: ViewState; icon: any; label: string }) => (
+    <button
+      onClick={() => setView(view)}
+      className={`flex flex-col items-center justify-center w-full py-3 transition-colors duration-200 ${
+        currentView === view ? 'text-rose-600 bg-rose-50' : 'text-slate-400 hover:text-slate-600'
+      }`}
+    >
+      <Icon size={22} strokeWidth={currentView === view ? 2.5 : 2} />
+      <span className="text-[10px] mt-1 font-medium">{label}</span>
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-800 font-sans">
+      {/* Header */}
+      <header className="bg-white shadow-sm sticky top-0 z-20 px-6 py-4 flex justify-between items-center">
+        <div>
+           {isMarketplace ? (
+             <h1 className="text-xl font-bold bg-gradient-to-r from-rose-500 to-purple-600 bg-clip-text text-transparent">
+              Beleza<span className="font-light text-slate-400">App</span>
+            </h1>
+           ) : (
+             <h1 className="text-xl font-bold text-slate-800 truncate max-w-[200px]">
+               {salonName || 'Painel Admin'}
+             </h1>
+           )}
+        </div>
+        
+        {/* New Login Button in Header for Marketplace */}
+        {isMarketplace && (
+          <button 
+            data-action="login"
+            className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full hover:bg-rose-100 transition flex items-center gap-1"
+          >
+            <LogIn size={14} /> Área do Dono
+          </button>
+        )}
+
+        {!isPublicMode && currentView === ViewState.CLIENT_PREVIEW && (
+          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-bold uppercase tracking-wide">
+            Modo Cliente
+          </span>
+        )}
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-4 pb-24 max-w-3xl mx-auto w-full">
+        {children}
+      </main>
+
+      {/* Bottom Navigation - Only show for Admin views */}
+      {!isPublicMode && (
+        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] overflow-x-auto">
+          <NavItem view={ViewState.DASHBOARD} icon={LayoutDashboard} label="Início" />
+          <NavItem view={ViewState.FINANCE} icon={Wallet} label="Financeiro" />
+          <NavItem view={ViewState.SERVICES} icon={Scissors} label="Serviços" />
+          <NavItem view={ViewState.PRODUCTS} icon={Package} label="Produtos" />
+          <NavItem view={ViewState.TEAM} icon={Users} label="Equipe" />
+          <NavItem view={ViewState.SETTINGS} icon={Settings} label="Ajustes" />
+        </nav>
+      )}
+
+      {/* Bottom Nav for Public Client View */}
+      {isClientView && onClientTabChange && (
+        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+           <button 
+             onClick={() => onClientTabChange('home')}
+             className={`flex flex-col items-center justify-center w-full py-3 transition-colors duration-200 ${
+               activeClientTab === 'home' ? 'text-rose-600' : 'text-slate-400 hover:text-slate-600'
+             }`}
+           >
+              <Store size={24} strokeWidth={activeClientTab === 'home' ? 2.5 : 2} />
+              <span className="text-[10px] mt-1 font-medium">Início</span>
+           </button>
+           <button 
+             onClick={() => onClientTabChange('store')}
+             className={`flex flex-col items-center justify-center w-full py-3 transition-colors duration-200 ${
+               activeClientTab === 'store' ? 'text-rose-600' : 'text-slate-400 hover:text-slate-600'
+             }`}
+           >
+              <ShoppingBag size={24} strokeWidth={activeClientTab === 'store' ? 2.5 : 2} />
+              <span className="text-[10px] mt-1 font-medium">Loja</span>
+           </button>
+           <button 
+             onClick={() => onClientTabChange('appointments')}
+             className={`flex flex-col items-center justify-center w-full py-3 transition-colors duration-200 ${
+               activeClientTab === 'appointments' ? 'text-rose-600' : 'text-slate-400 hover:text-slate-600'
+             }`}
+           >
+              <Calendar size={24} strokeWidth={activeClientTab === 'appointments' ? 2.5 : 2} />
+              <span className="text-[10px] mt-1 font-medium">Conta</span>
+           </button>
+        </nav>
+      )}
+
+      {/* Bottom Nav for Marketplace Home */}
+      {isMarketplace && (
+         <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe px-6 py-3">
+             <button className="flex flex-col items-center text-rose-600">
+                <Store size={24} />
+                <span className="text-xs font-bold mt-1">Explorar</span>
+             </button>
+             <button 
+                data-action="login"
+                className="flex flex-col items-center text-slate-400 hover:text-slate-800"
+             >
+                <LayoutDashboard size={24} />
+                <span className="text-xs font-bold mt-1">Sou Parceiro</span>
+             </button>
+         </nav>
+      )}
+    </div>
+  );
+};
+
+export default Layout;
