@@ -5,7 +5,7 @@ import * as Storage from './services/storage';
 import * as Gemini from './services/gemini';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
-import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase, LayoutList } from 'lucide-react';
+import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase, LayoutList, Heart, Check, Store } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- STATE WITH LAZY INITIALIZATION (PERFORMANCE FIX) ---
@@ -36,6 +36,9 @@ const App: React.FC = () => {
   const [showLandingPage, setShowLandingPage] = useState(false);
   const [currentSalonMetadata, setCurrentSalonMetadata] = useState<SalonMetadata | null>(null);
   
+  // Navigation State
+  const [isDirectLink, setIsDirectLink] = useState(false);
+
   // Shopping Cart State
   const [cart, setCart] = useState<Product[]>([]);
 
@@ -63,6 +66,57 @@ const App: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({ name: '', phone: '', birthDate: '', password: '' });
 
+  // --- MEMOIZED STATS (HOISTED TO TOP LEVEL TO FIX REACT ERROR #310) ---
+  // IMPORTANT: Hooks must be at the top level, never inside conditional renders
+  
+  const saasStats = useMemo(() => {
+    const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
+    const totalTenants = tenants.length;
+    const activeTenants = tenants.filter(t => t.status === 'active').length;
+    const proTenants = tenants.filter(t => t.plan === 'pro').length;
+    return { totalRevenue, totalTenants, activeTenants, proTenants };
+  }, [tenants]);
+
+  const dashboardStats = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const todaysAppointments = appointments.filter(a => a.date === today && a.status !== 'cancelled');
+    const incomeToday = todaysAppointments.reduce((sum, a) => sum + a.totalPrice, 0);
+    const nextAppointment = todaysAppointments.filter(a => a.time > new Date().toLocaleTimeString().slice(0,5)).sort((a,b) => a.time.localeCompare(b.time))[0];
+
+    const completedApps = appointments.filter(a => a.status === 'completed');
+    const totalRevenue = completedApps.reduce((sum, a) => sum + a.totalPrice, 0);
+    const avgTicket = completedApps.length > 0 ? totalRevenue / completedApps.length : 0;
+    
+    const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
+    const totalAppsCount = appointments.length;
+    const cancellationRate = totalAppsCount > 0 ? (cancelledCount / totalAppsCount) * 100 : 0;
+
+    // Weekly Flow
+    const flowData = new Array(7).fill(0);
+    appointments.forEach(a => {
+        const date = new Date(a.date);
+        const dayIndex = date.getDay(); // 0 (Sun) - 6 (Sat)
+        flowData[dayIndex]++;
+    });
+    const maxFlow = Math.max(...flowData, 1);
+
+    // Top Products
+    const productSales: {[key:string]: {count: number, name: string}} = {};
+    appointments.forEach(a => {
+        if(a.products) {
+            a.products.forEach(p => {
+                if(!productSales[p.id]) productSales[p.id] = {count: 0, name: p.name};
+                productSales[p.id].count++;
+            });
+        }
+    });
+    const topProducts = Object.values(productSales).sort((a,b) => b.count - a.count).slice(0, 3);
+    const todayStr = today.split('-').reverse().join('/');
+    const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    return { todayStr, todaysAppointments, incomeToday, nextAppointment, avgTicket, cancellationRate, flowData, maxFlow, topProducts, weekDays };
+  }, [appointments]);
+
   // --- INITIALIZATION & ROUTING SIMULATION ---
 
   useEffect(() => {
@@ -83,10 +137,13 @@ const App: React.FC = () => {
     } else if (isAdmin) {
       handleAdminLogin();
     } else if (salonSlug) {
+      // Direct Link Logic
+      setIsDirectLink(true);
       const metadata = allSalons.find(s => s.slug === salonSlug);
       if (metadata) {
         handleNavigateToSalon(salonSlug, metadata, false);
       } else {
+        // Fallback if slug not found, but technically this shouldn't happen for a valid direct link
         setView(ViewState.MARKETPLACE);
       }
     } else {
@@ -112,18 +169,11 @@ const App: React.FC = () => {
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
     
-    const handleLoginClick = (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        const btn = target.closest('button[data-action="login"]');
-        if (btn) {
-            setIsLoginModalOpen(true);
-        }
+    // Cleanup
+    return () => {
+        window.removeEventListener('popstate', handlePopState);
     };
-    document.addEventListener('click', handleLoginClick);
-    return () => document.removeEventListener('click', handleLoginClick);
-
   }, []);
 
   const loadSalonData = () => {
@@ -173,9 +223,19 @@ const App: React.FC = () => {
 
   const handleAdminLogout = () => {
       if(confirm("Deseja realmente sair da área administrativa?")) {
-          setView(ViewState.SAAS_LP); // Return to Main Sales Home
-          setCurrentSalonMetadata(null); // Clear context
-          window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
+          // If we are managing a specific salon, go back to its public cover page (Locked View)
+          if (currentSalonMetadata) {
+             setView(ViewState.PUBLIC_SALON);
+             setShowLandingPage(true);
+             setIsBookingMode(false);
+             // We KEEP the currentSalonMetadata so the page remains loaded
+          } else {
+              // If super admin or generic context, go to SaaS Sales Page
+              setView(ViewState.SAAS_LP); 
+              setCurrentSalonMetadata(null); 
+              const newUrl = window.location.pathname; // Strips params usually, or just use '/'
+              window.history.pushState({ path: newUrl }, '', newUrl);
+          }
       }
   };
 
@@ -477,6 +537,24 @@ const App: React.FC = () => {
     }
   };
 
+  // --- SHARE HANDLER ---
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: currentSalonMetadata?.name || 'BelezaApp',
+          text: `Agende seu horário no ${currentSalonMetadata?.name}!`,
+          url: window.location.href,
+        });
+      } catch (error) {
+        console.log('Error sharing', error);
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copiado para a área de transferência!');
+    }
+  };
+
   // --- CLIENT AUTH HANDLERS ---
 
   const handleAuthSubmit = (e: React.FormEvent) => {
@@ -525,7 +603,15 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
       setCurrentUser(null);
-      handleBackToMarketplace(true);
+      // If we are in Direct Link mode, we don't want to go to Marketplace.
+      // We want to stay in the Salon Landing Page context.
+      if (isDirectLink) {
+          setIsBookingMode(false);
+          setShowLandingPage(true);
+          setView(ViewState.PUBLIC_SALON);
+      } else {
+          handleBackToMarketplace(true);
+      }
   };
 
   // --- BOOKING & ORDER HANDLERS ---
@@ -1089,14 +1175,8 @@ const App: React.FC = () => {
   );
 
   const renderSaaSAdmin = () => {
-    // Memoize stats to avoid recalculating on every render
-    const stats = useMemo(() => {
-        const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
-        const totalTenants = tenants.length;
-        const activeTenants = tenants.filter(t => t.status === 'active').length;
-        const proTenants = tenants.filter(t => t.plan === 'pro').length;
-        return { totalRevenue, totalTenants, activeTenants, proTenants };
-    }, [tenants]);
+    // USE MEMOIZED STATS FROM TOP LEVEL
+    const stats = saasStats;
 
     return (
       <div className="space-y-8 animate-fadeIn max-w-5xl mx-auto">
@@ -1216,21 +1296,33 @@ const App: React.FC = () => {
 
           {/* Hero */}
           <section className="pt-20 pb-32 px-6 text-center max-w-4xl mx-auto">
-              <span className="text-rose-600 font-bold bg-rose-50 px-3 py-1 rounded-full text-sm mb-6 inline-block">Plataforma #1 para Salões e Barbearias</span>
+              <span className="text-rose-600 font-bold bg-rose-50 px-3 py-1 rounded-full text-xs mb-6 inline-block uppercase tracking-wider">Software para Salões</span>
               <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight">
-                  Seu salão com <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-purple-600">agendamento online</span> e gestão completa.
+                  Seu salão com <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-pink-600">agendamento online</span> e gestão completa.
               </h1>
-              <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto">
-                  Encontre os melhores salões da sua cidade ou gerencie seu próprio negócio com o BelezaApp.
+              <p className="text-lg text-slate-500 mb-10 max-w-2xl mx-auto">
+                  Encontre os melhores profissionais ou organize seu negócio em um só lugar.
               </p>
               
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  {/* BOTÕES DE ESCOLHA SOLICITADOS PELO USUÁRIO */}
-                  <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-rose-600 border-2 border-rose-100 px-8 py-4 rounded-xl font-bold text-lg hover:bg-rose-50 transition shadow-lg shadow-rose-100 flex items-center justify-center gap-2">
-                      <Search size={20} /> Encontrar um Salão
-                  </button>
-                  <button onClick={() => setIsLoginModalOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-black transition flex items-center justify-center gap-2">
-                      <Briefcase size={20} /> Sou Dono de Salão
+              <div className="flex flex-col sm:flex-row justify-center gap-4 items-center">
+                  {/* BOTÕES DE ESCOLHA SOLICITADOS PELO USUÁRIO (Estilo Suave) */}
+                  <div className="relative">
+                      <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-rose-600 border border-rose-100 pl-6 pr-8 py-4 rounded-full font-bold text-lg hover:bg-rose-50 transition shadow-lg shadow-rose-100 flex items-center justify-center gap-3">
+                          <Heart size={20} className="fill-rose-50 text-rose-500"/> Quero me Cuidar
+                      </button>
+                      
+                      {/* Avatar Stack for Social Proof */}
+                      <div className="absolute -right-8 -top-3 flex -space-x-2 bg-white p-1 rounded-full shadow-sm border border-slate-100">
+                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=64&h=64&fit=crop" alt=""/>
+                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=64&h=64&fit=crop" alt=""/>
+                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=64&h=64&fit=crop" alt=""/>
+                      </div>
+                  </div>
+
+                  <span className="text-slate-300 text-sm font-bold px-2">ou</span>
+
+                  <button onClick={() => setIsLoginModalOpen(true)} className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-8 py-4 rounded-full font-bold text-lg hover:shadow-xl hover:-translate-y-0.5 transition flex items-center justify-center gap-2">
+                      <Briefcase size={20} /> Sou Profissional
                   </button>
               </div>
           </section>
@@ -1387,47 +1479,8 @@ const App: React.FC = () => {
   );
 
   const renderAdminDashboard = () => {
-    // MEMOIZED DASHBOARD STATS FOR PERFORMANCE
-    const dashboardStats = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
-        const todaysAppointments = appointments.filter(a => a.date === today && a.status !== 'cancelled');
-        const incomeToday = todaysAppointments.reduce((sum, a) => sum + a.totalPrice, 0);
-        const nextAppointment = todaysAppointments.filter(a => a.time > new Date().toLocaleTimeString().slice(0,5)).sort((a,b) => a.time.localeCompare(b.time))[0];
-
-        const completedApps = appointments.filter(a => a.status === 'completed');
-        const totalRevenue = completedApps.reduce((sum, a) => sum + a.totalPrice, 0);
-        const avgTicket = completedApps.length > 0 ? totalRevenue / completedApps.length : 0;
-        
-        const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
-        const totalAppsCount = appointments.length;
-        const cancellationRate = totalAppsCount > 0 ? (cancelledCount / totalAppsCount) * 100 : 0;
-
-        // Weekly Flow
-        const flowData = new Array(7).fill(0);
-        appointments.forEach(a => {
-            const date = new Date(a.date);
-            const dayIndex = date.getDay(); // 0 (Sun) - 6 (Sat)
-            // Just simple week aggregation for demo
-            flowData[dayIndex]++;
-        });
-        const maxFlow = Math.max(...flowData, 1);
-
-        // Top Products
-        const productSales: {[key:string]: {count: number, name: string}} = {};
-        appointments.forEach(a => {
-            if(a.products) {
-                a.products.forEach(p => {
-                    if(!productSales[p.id]) productSales[p.id] = {count: 0, name: p.name};
-                    productSales[p.id].count++;
-                });
-            }
-        });
-        const topProducts = Object.values(productSales).sort((a,b) => b.count - a.count).slice(0, 3);
-        const todayStr = today.split('-').reverse().join('/');
-        const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-        return { todayStr, todaysAppointments, incomeToday, nextAppointment, avgTicket, cancellationRate, flowData, maxFlow, topProducts, weekDays };
-    }, [appointments]); // Only recalculate when appointments change
+    // USE MEMOIZED STATS FROM TOP LEVEL
+    // const dashboardStats = useMemo... (MOVED TO TOP LEVEL)
 
     return (
       <div className="space-y-6 animate-fadeIn">
@@ -1711,14 +1764,38 @@ const App: React.FC = () => {
           <div className="relative h-64 w-full">
               <img src={currentSalonMetadata.coverUrl} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-              <div className="absolute bottom-0 left-0 p-6 text-white w-full">
+              
+              {/* Header Controls - Top Layer */}
+              <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-20">
+                  {/* Left: Back Button (Conditional) */}
+                  <div>
+                    {!isDirectLink && (
+                        <button onClick={() => handleBackToMarketplace()} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
+                            <ArrowLeft size={24} />
+                        </button>
+                    )}
+                  </div>
+
+                  {/* Right: Lock & Share */}
+                  <div className="flex gap-3">
+                      <button onClick={() => setIsLoginModalOpen(true)} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition shadow-sm">
+                           <Lock size={24} />
+                      </button>
+                      <button onClick={handleShare} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition shadow-sm">
+                          <Share2 size={24} />
+                      </button>
+                  </div>
+              </div>
+
+              {/* Bottom Info Layer */}
+              <div className="absolute bottom-0 left-0 p-6 text-white w-full z-10">
                   <div className="flex justify-between items-end">
                       <div>
-                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider mb-2 inline-block">
+                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider mb-2 inline-block shadow-sm">
                               {currentSalonMetadata.category}
                           </span>
-                          <h1 className="text-3xl font-bold mb-1">{currentSalonMetadata.name}</h1>
-                          <p className="text-white/80 text-sm flex items-center gap-1">
+                          <h1 className="text-3xl font-bold mb-1 drop-shadow-md">{currentSalonMetadata.name}</h1>
+                          <p className="text-white/90 text-sm flex items-center gap-1">
                               <MapPinIcon size={14} /> {currentSalonMetadata.location}
                           </p>
                       </div>
@@ -1727,63 +1804,105 @@ const App: React.FC = () => {
                                <Star size={16} className="text-amber-400 fill-amber-400" />
                                <span className="font-bold">{currentSalonMetadata.rating}</span>
                            </div>
-                           {/* CADEADO DO DONO DO SALÃO (RECOLOCADO CONFORME PEDIDO) */}
-                           <button onClick={() => setIsLoginModalOpen(true)} className="mt-2 bg-white/20 p-2 rounded-full text-white hover:bg-white/30 backdrop-blur-md shadow-md">
-                               <Lock size={16}/>
-                           </button>
                       </div>
                   </div>
               </div>
-              
-              <button onClick={() => handleBackToMarketplace()} className="absolute top-6 left-6 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
-                  <ArrowLeft size={24} />
-              </button>
-              <button className="absolute top-6 right-6 bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
-                  <Share2 size={24} />
-              </button>
           </div>
 
-          <div className="p-6 bg-white rounded-t-3xl -mt-6 relative z-10 space-y-8">
-               <div className="flex justify-around border-b border-slate-100 pb-6">
-                   <div className="text-center">
-                       <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-2"><Scissors size={20} /></div>
-                       <p className="text-xs font-bold text-slate-700">Serviços</p>
-                   </div>
-                   <div className="text-center">
-                       <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2"><Users size={20} /></div>
-                       <p className="text-xs font-bold text-slate-700">Equipe</p>
-                   </div>
-                    <div className="text-center">
-                       <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2"><MapPinIcon size={20} /></div>
-                       <p className="text-xs font-bold text-slate-700">Local</p>
-                   </div>
-               </div>
-
-               <div>
-                   <h3 className="font-bold text-lg text-slate-800 mb-4">Sobre</h3>
+          <div className="p-6 bg-white rounded-t-3xl -mt-6 relative z-10 space-y-10 min-h-[500px]">
+               {/* About Section */}
+               <div className="space-y-3">
+                   <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                       <Store size={20} className="text-rose-600"/> Sobre Nós
+                   </h3>
                    <p className="text-slate-500 text-sm leading-relaxed">
-                       Bem-vindo ao {currentSalonMetadata.name}. Oferecemos os melhores serviços de {currentSalonMetadata.category} da região de {currentSalonMetadata.location}. 
-                       Nossa equipe é especializada e o ambiente é preparado para seu conforto.
+                       Bem-vindo ao {currentSalonMetadata.name}. Somos especialistas em realçar sua beleza com um atendimento exclusivo e personalizado em {currentSalonMetadata.location}. 
+                       Nossa equipe utiliza as melhores técnicas e produtos do mercado.
                    </p>
                </div>
+
+               {/* Team Section - Elegant Cards */}
+               <div>
+                   <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                       <Users size={20} className="text-rose-600"/> Conheça nossos Talentos
+                   </h3>
+                   {employees.length > 0 ? (
+                       <div className="flex overflow-x-auto gap-4 pb-4 no-scrollbar">
+                           {employees.map(emp => (
+                               <div key={emp.id} className="min-w-[140px] flex flex-col items-center">
+                                   <div className="w-24 h-24 rounded-full border-2 border-rose-100 p-1 mb-2">
+                                       <div className="w-full h-full rounded-full overflow-hidden">
+                                           {emp.photoUrl ? (
+                                               <img src={emp.photoUrl} className="w-full h-full object-cover"/>
+                                           ) : (
+                                               <User className="w-full h-full p-4 bg-slate-100 text-slate-400" />
+                                           )}
+                                       </div>
+                                   </div>
+                                   <p className="font-bold text-slate-800 text-sm">{emp.name}</p>
+                                   <p className="text-xs text-rose-500 font-medium">{emp.role}</p>
+                               </div>
+                           ))}
+                       </div>
+                   ) : (
+                       <p className="text-slate-400 text-sm">Equipe não cadastrada.</p>
+                   )}
+               </div>
+
+               {/* Services List - Clean Menu */}
+               <div>
+                   <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                       <Scissors size={20} className="text-rose-600"/> Experiências
+                   </h3>
+                   {services.length > 0 ? (
+                       <div className="space-y-3">
+                           {services.slice(0, 5).map(service => (
+                               <div key={service.id} className="flex justify-between items-center border-b border-dashed border-slate-200 pb-2">
+                                   <div>
+                                       <p className="font-bold text-slate-700">{service.name}</p>
+                                       <p className="text-xs text-slate-400">{service.duration} min</p>
+                                   </div>
+                                   <span className="font-bold text-slate-900 bg-slate-50 px-2 py-1 rounded text-sm">
+                                       {settings.currency} {service.price}
+                                   </span>
+                               </div>
+                           ))}
+                           {services.length > 5 && (
+                               <button onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }} className="w-full text-center text-xs text-rose-600 font-bold mt-2">
+                                   Ver Menu Completo
+                               </button>
+                           )}
+                       </div>
+                   ) : (
+                       <p className="text-slate-400 text-sm">Nenhum serviço disponível.</p>
+                   )}
+               </div>
                
-               <div className="bg-slate-50 p-4 rounded-xl">
-                   <h3 className="font-bold text-sm text-slate-800 mb-2">Horário de Funcionamento</h3>
-                   <div className="flex justify-between text-sm text-slate-500">
+               {/* Location Block */}
+               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                   <h3 className="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2">
+                       <Clock size={16} className="text-slate-500"/> Horários & Local
+                   </h3>
+                   <div className="flex justify-between text-sm text-slate-500 mb-1">
                        <span>Segunda - Sexta</span>
                        <span className="font-medium text-slate-700">{settings.openTime} - {settings.closeTime}</span>
                    </div>
-                   <div className="flex justify-between text-sm text-slate-500 mt-1">
+                   <div className="flex justify-between text-sm text-slate-500 mb-4">
                        <span>Sábado</span>
                        <span className="font-medium text-slate-700">09:00 - 18:00</span>
+                   </div>
+                   <div className="flex items-start gap-2 text-sm text-slate-600 border-t border-slate-200 pt-3">
+                       <MapPinIcon size={16} className="text-rose-500 mt-0.5 flex-shrink-0" />
+                       <p>{settings.address || `${currentSalonMetadata.location}, Centro`}</p>
                    </div>
                </div>
           </div>
 
-          <div className="fixed bottom-20 left-4 right-4 z-40 md:max-w-3xl md:mx-auto">
+          {/* Sticky CTA */}
+          <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 p-4 z-40 md:max-w-3xl md:mx-auto">
               <button 
                   onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }}
-                  className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:bg-rose-700 transition flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-r from-rose-500 to-pink-600 text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:shadow-2xl transition flex items-center justify-center gap-2"
               >
                   <Calendar size={20} />
                   Agendar Horário
