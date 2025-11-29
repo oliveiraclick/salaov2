@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant, SaasPlan } from './types';
 import * as Storage from './services/storage';
 import * as Gemini from './services/gemini';
@@ -8,26 +8,29 @@ import EmptyState from './components/EmptyState';
 import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase, LayoutList } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<ViewState>(ViewState.MARKETPLACE);
-  const [services, setServices] = useState<Service[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [settings, setSettings] = useState<ShopSettings>(Storage.getSettings());
+  // --- STATE WITH LAZY INITIALIZATION (PERFORMANCE FIX) ---
+  // Change default view to SAAS_LP (Sales Home)
+  const [view, setView] = useState<ViewState>(ViewState.SAAS_LP);
+  
+  const [services, setServices] = useState<Service[]>(() => Storage.getServices());
+  const [products, setProducts] = useState<Product[]>(() => Storage.getProducts());
+  const [employees, setEmployees] = useState<Employee[]>(() => Storage.getEmployees());
+  const [appointments, setAppointments] = useState<Appointment[]>(() => Storage.getAppointments());
+  const [settings, setSettings] = useState<ShopSettings>(() => Storage.getSettings());
   
   // Financial & Client State
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => Storage.getTransactions());
+  const [coupons, setCoupons] = useState<Coupon[]>(() => Storage.getCoupons());
+  const [clients, setClients] = useState<Client[]>(() => Storage.getClients());
   const [currentUser, setCurrentUser] = useState<Client | null>(null);
 
   // Marketplace State
-  const [platformSalons, setPlatformSalons] = useState<SalonMetadata[]>([]);
+  const [platformSalons, setPlatformSalons] = useState<SalonMetadata[]>(() => Storage.getPlatformSalons());
   const [searchQuery, setSearchQuery] = useState('');
 
   // SaaS State
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [saasPlans, setSaasPlans] = useState<SaasPlan[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>(() => Storage.getTenants());
+  const [saasPlans, setSaasPlans] = useState<SaasPlan[]>(() => Storage.getSaasPlans());
 
   // Public/Landing Page State
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -87,7 +90,8 @@ const App: React.FC = () => {
         setView(ViewState.MARKETPLACE);
       }
     } else {
-      setView(ViewState.MARKETPLACE);
+      // Default to SaaS Landing Page (Sales Home) when accessing domain root
+      setView(ViewState.SAAS_LP);
     }
 
     // Handle Browser Back Button
@@ -102,7 +106,8 @@ const App: React.FC = () => {
          const meta = allSalons.find(s => s.slug === slug);
          if (meta) handleNavigateToSalon(slug, meta, false);
        } else {
-         handleBackToMarketplace(false);
+         // If back to root, show Sales LP
+         setView(ViewState.SAAS_LP);
        }
     };
 
@@ -168,7 +173,7 @@ const App: React.FC = () => {
 
   const handleAdminLogout = () => {
       if(confirm("Deseja realmente sair da área administrativa?")) {
-          setView(ViewState.MARKETPLACE);
+          setView(ViewState.SAAS_LP); // Return to Main Sales Home
           setCurrentSalonMetadata(null); // Clear context
           window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
       }
@@ -182,18 +187,18 @@ const App: React.FC = () => {
       return;
     }
 
-    // If we are NOT in a specific salon (i.e. Marketplace), switch to demo admin.
+    // If we are NOT in a specific salon (i.e. Marketplace or SaaS LP), switch to demo admin.
     // If we ARE in a salon (currentSalonMetadata is set), we assume we are logging into THIS salon.
     if (!currentSalonMetadata) {
         const adminNamespace = 'admin_demo_account';
         Storage.setCurrentNamespace(adminNamespace);
     }
-    // Else: we keep the current namespace (e.g. 'barbearia-vintage') so the owner manages THEIR salon.
+    // Else: we keep the current namespace so the owner manages THEIR salon.
 
-    // Seed data if empty (works for both new salons or the demo account)
+    // Seed data if empty
     const currentServices = Storage.getServices();
     if (currentServices.length === 0) {
-        Storage.saveServices(Storage.getServices()); // Will load defaults from storage.ts if empty
+        Storage.saveServices(Storage.getServices());
         Storage.saveProducts(Storage.getProducts());
         Storage.saveEmployees(Storage.getEmployees());
         
@@ -262,11 +267,10 @@ const App: React.FC = () => {
 
     loadSalonData();
     setView(ViewState.DASHBOARD);
-    setShowLandingPage(false); // Hide LP when going to Dashboard
+    setShowLandingPage(false); 
     setIsLoginModalOpen(false);
     setLoginEmail('');
     setLoginPassword('');
-    // We do NOT change the URL if we are managing a specific salon, to keep context.
   };
   
   const fillDemoLogin = () => {
@@ -383,10 +387,9 @@ const App: React.FC = () => {
   const handleSavePlan = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
-    const item = editingItem as any; // Temporary Any cast for SaasPlan
+    const item = editingItem as any;
     if (!item.name) return;
 
-    // Convert features string to array if it came from input
     let featuresList = item.features;
     if (typeof item.features === 'string') {
         featuresList = item.features.split(',').map((f: string) => f.trim()).filter((f: string) => f.length > 0);
@@ -573,7 +576,7 @@ const App: React.FC = () => {
           price: 0,
           totalPrice: productsTotal,
           duration: 0,
-          status: 'completed', // Auto-complete for pickup or leave scheduled? 'completed' effectively means 'order placed' here for simplicity, or use 'scheduled' to show in active list
+          status: 'completed',
           createdAt: Date.now()
       };
       const updatedApps = [...appointments, newOrder];
@@ -1086,9 +1089,14 @@ const App: React.FC = () => {
   );
 
   const renderSaaSAdmin = () => {
-    const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
-    const totalTenants = tenants.length;
-    const activeTenants = tenants.filter(t => t.status === 'active').length;
+    // Memoize stats to avoid recalculating on every render
+    const stats = useMemo(() => {
+        const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
+        const totalTenants = tenants.length;
+        const activeTenants = tenants.filter(t => t.status === 'active').length;
+        const proTenants = tenants.filter(t => t.plan === 'pro').length;
+        return { totalRevenue, totalTenants, activeTenants, proTenants };
+    }, [tenants]);
 
     return (
       <div className="space-y-8 animate-fadeIn max-w-5xl mx-auto">
@@ -1115,17 +1123,17 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">MRR (Mensal)</p>
-               <h3 className="text-3xl font-bold text-rose-600">R$ {totalRevenue.toFixed(2)}</h3>
+               <h3 className="text-3xl font-bold text-rose-600">R$ {stats.totalRevenue.toFixed(2)}</h3>
                <p className="text-xs text-green-600 font-bold mt-2 flex items-center gap-1"><TrendingUp size={12}/> +12% esse mês</p>
            </div>
            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total de Salões</p>
-               <h3 className="text-3xl font-bold text-slate-800">{totalTenants}</h3>
-               <p className="text-xs text-slate-400 mt-2">{activeTenants} ativos</p>
+               <h3 className="text-3xl font-bold text-slate-800">{stats.totalTenants}</h3>
+               <p className="text-xs text-slate-400 mt-2">{stats.activeTenants} ativos</p>
            </div>
            <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-sm">
                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Plano Pro</p>
-               <h3 className="text-3xl font-bold">{tenants.filter(t => t.plan === 'pro').length}</h3>
+               <h3 className="text-3xl font-bold">{stats.proTenants}</h3>
                <p className="text-xs text-slate-400 mt-2">Salões Pagantes</p>
            </div>
         </div>
@@ -1198,9 +1206,10 @@ const App: React.FC = () => {
                     </div>
                     <span className="font-bold text-xl text-slate-800">BelezaApp <span className="text-slate-400 font-light">Pro</span></span>
                  </div>
-                 <div className="flex gap-4">
-                     <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-slate-600 font-medium hover:text-rose-600">Entrar</button>
-                     <button onClick={() => {}} className="bg-rose-600 text-white px-5 py-2 rounded-full font-bold hover:bg-rose-700 transition shadow-lg shadow-rose-200">Começar Grátis</button>
+                 <div className="flex gap-4 items-center">
+                     <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-600 font-bold hover:text-rose-600 flex items-center gap-2 text-sm">
+                         <Lock size={16} /> Área do Parceiro
+                     </button>
                  </div>
              </div>
           </header>
@@ -1212,23 +1221,16 @@ const App: React.FC = () => {
                   Seu salão com <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-purple-600">agendamento online</span> e gestão completa.
               </h1>
               <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto">
-                  Dê adeus à agenda de papel. Tenha site próprio, controle financeiro, lembretes automáticos e receba pagamentos online. Tudo em um só lugar.
+                  Encontre os melhores salões da sua cidade ou gerencie seu próprio negócio com o BelezaApp.
               </p>
+              
               <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <button onClick={() => {
-                      // Simulating Tenant Creation with Default Plan
-                      const newSlug = `salao-novo-${Math.floor(Math.random() * 1000)}`;
-                      const newTenant: Tenant = {
-                          id: generateId(), slug: newSlug, ownerName: 'Você', email: 'voce@exemplo.com', plan: 'Start', status: 'active', mrr: 0, createdAt: Date.now()
-                      };
-                      Storage.addTenant(newTenant);
-                      handleNavigateToSalon(newSlug);
-                      setTimeout(() => handleAdminLogin(), 100); // Login as admin immediately
-                  }} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-black transition flex items-center justify-center gap-2">
-                      <Rocket size={20} /> Criar Conta Grátis
+                  {/* BOTÕES DE ESCOLHA SOLICITADOS PELO USUÁRIO */}
+                  <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-rose-600 border-2 border-rose-100 px-8 py-4 rounded-xl font-bold text-lg hover:bg-rose-50 transition shadow-lg shadow-rose-100 flex items-center justify-center gap-2">
+                      <Search size={20} /> Encontrar um Salão
                   </button>
-                  <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-slate-700 border border-slate-200 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition">
-                      Ver Demonstração
+                  <button onClick={() => setIsLoginModalOpen(true)} className="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-black transition flex items-center justify-center gap-2">
+                      <Briefcase size={20} /> Sou Dono de Salão
                   </button>
               </div>
           </section>
@@ -1385,41 +1387,47 @@ const App: React.FC = () => {
   );
 
   const renderAdminDashboard = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const todaysAppointments = appointments.filter(a => a.date === today && a.status !== 'cancelled');
-    const incomeToday = todaysAppointments.reduce((sum, a) => sum + a.totalPrice, 0);
-    const nextAppointment = todaysAppointments.filter(a => a.time > new Date().toLocaleTimeString().slice(0,5)).sort((a,b) => a.time.localeCompare(b.time))[0];
+    // MEMOIZED DASHBOARD STATS FOR PERFORMANCE
+    const dashboardStats = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        const todaysAppointments = appointments.filter(a => a.date === today && a.status !== 'cancelled');
+        const incomeToday = todaysAppointments.reduce((sum, a) => sum + a.totalPrice, 0);
+        const nextAppointment = todaysAppointments.filter(a => a.time > new Date().toLocaleTimeString().slice(0,5)).sort((a,b) => a.time.localeCompare(b.time))[0];
 
-    // Metrics Calculation
-    const completedApps = appointments.filter(a => a.status === 'completed');
-    const totalRevenue = completedApps.reduce((sum, a) => sum + a.totalPrice, 0);
-    const avgTicket = completedApps.length > 0 ? totalRevenue / completedApps.length : 0;
-    
-    const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
-    const totalAppsCount = appointments.length;
-    const cancellationRate = totalAppsCount > 0 ? (cancelledCount / totalAppsCount) * 100 : 0;
+        const completedApps = appointments.filter(a => a.status === 'completed');
+        const totalRevenue = completedApps.reduce((sum, a) => sum + a.totalPrice, 0);
+        const avgTicket = completedApps.length > 0 ? totalRevenue / completedApps.length : 0;
+        
+        const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
+        const totalAppsCount = appointments.length;
+        const cancellationRate = totalAppsCount > 0 ? (cancelledCount / totalAppsCount) * 100 : 0;
 
-    // Weekly Flow Calculation
-    const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    const flowData = new Array(7).fill(0);
-    appointments.forEach(a => {
-        const date = new Date(a.date);
-        const dayIndex = new Date(a.date + 'T12:00:00').getDay();
-        flowData[dayIndex]++;
-    });
-    const maxFlow = Math.max(...flowData, 1);
+        // Weekly Flow
+        const flowData = new Array(7).fill(0);
+        appointments.forEach(a => {
+            const date = new Date(a.date);
+            const dayIndex = date.getDay(); // 0 (Sun) - 6 (Sat)
+            // Just simple week aggregation for demo
+            flowData[dayIndex]++;
+        });
+        const maxFlow = Math.max(...flowData, 1);
 
-    // Top Products
-    const productSales: {[key:string]: {count: number, name: string}} = {};
-    appointments.forEach(a => {
-        if(a.products) {
-            a.products.forEach(p => {
-                if(!productSales[p.id]) productSales[p.id] = {count: 0, name: p.name};
-                productSales[p.id].count++;
-            });
-        }
-    });
-    const topProducts = Object.values(productSales).sort((a,b) => b.count - a.count).slice(0, 3);
+        // Top Products
+        const productSales: {[key:string]: {count: number, name: string}} = {};
+        appointments.forEach(a => {
+            if(a.products) {
+                a.products.forEach(p => {
+                    if(!productSales[p.id]) productSales[p.id] = {count: 0, name: p.name};
+                    productSales[p.id].count++;
+                });
+            }
+        });
+        const topProducts = Object.values(productSales).sort((a,b) => b.count - a.count).slice(0, 3);
+        const todayStr = today.split('-').reverse().join('/');
+        const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+        return { todayStr, todaysAppointments, incomeToday, nextAppointment, avgTicket, cancellationRate, flowData, maxFlow, topProducts, weekDays };
+    }, [appointments]); // Only recalculate when appointments change
 
     return (
       <div className="space-y-6 animate-fadeIn">
@@ -1450,13 +1458,13 @@ const App: React.FC = () => {
              <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-center">
                  <p className="text-slate-400 text-[10px] font-bold uppercase mb-1">Ticket Médio</p>
                  <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-1">
-                     <DollarSign size={14} className="text-green-500" /> {avgTicket.toFixed(0)}
+                     <DollarSign size={14} className="text-green-500" /> {dashboardStats.avgTicket.toFixed(0)}
                  </h3>
              </div>
              <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-center">
                  <p className="text-slate-400 text-[10px] font-bold uppercase mb-1">Cancelamentos</p>
                  <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-1">
-                     <AlertCircle size={14} className="text-red-500" /> {cancellationRate.toFixed(0)}%
+                     <AlertCircle size={14} className="text-red-500" /> {dashboardStats.cancellationRate.toFixed(0)}%
                  </h3>
              </div>
          </div>
@@ -1465,11 +1473,11 @@ const App: React.FC = () => {
          <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-800 p-4 rounded-2xl text-white shadow-lg">
                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Hoje</p>
-               <h3 className="text-2xl font-bold">{todaysAppointments.length} <span className="text-sm font-normal text-slate-400">agend.</span></h3>
+               <h3 className="text-2xl font-bold">{dashboardStats.todaysAppointments.length} <span className="text-sm font-normal text-slate-400">agend.</span></h3>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Faturamento Hoje</p>
-               <h3 className="text-2xl font-bold text-green-600">{settings.currency} {incomeToday}</h3>
+               <h3 className="text-2xl font-bold text-green-600">{settings.currency} {dashboardStats.incomeToday}</h3>
             </div>
          </div>
 
@@ -1479,28 +1487,28 @@ const App: React.FC = () => {
                  <BarChart3 size={18} className="text-slate-400" /> Fluxo Semanal
              </h3>
              <div className="flex items-end justify-between h-24 gap-2">
-                 {flowData.map((val, i) => (
+                 {dashboardStats.flowData.map((val, i) => (
                      <div key={i} className="flex flex-col items-center gap-1 w-full">
                          <div 
                             className="w-full bg-rose-100 rounded-t-md relative group hover:bg-rose-200 transition-all"
-                            style={{ height: `${(val / maxFlow) * 100}%`, minHeight: '4px' }}
+                            style={{ height: `${(val / dashboardStats.maxFlow) * 100}%`, minHeight: '4px' }}
                          >
                             <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-rose-600 opacity-0 group-hover:opacity-100 transition">{val}</span>
                          </div>
-                         <span className="text-[10px] text-slate-400 font-medium">{weekDays[i]}</span>
+                         <span className="text-[10px] text-slate-400 font-medium">{dashboardStats.weekDays[i]}</span>
                      </div>
                  ))}
              </div>
          </div>
 
          {/* Top Products */}
-         {topProducts.length > 0 && (
+         {dashboardStats.topProducts.length > 0 && (
              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                      <Trophy size={18} className="text-amber-500" /> Produtos Mais Vendidos
                  </h3>
                  <div className="space-y-4">
-                     {topProducts.map((prod, i) => (
+                     {dashboardStats.topProducts.map((prod, i) => (
                          <div key={i}>
                              <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
                                  <span>{prod.name}</span>
@@ -1509,7 +1517,7 @@ const App: React.FC = () => {
                              <div className="w-full bg-slate-100 rounded-full h-2">
                                  <div 
                                     className="bg-amber-400 h-2 rounded-full" 
-                                    style={{ width: `${(prod.count / topProducts[0].count) * 100}%` }}
+                                    style={{ width: `${(prod.count / dashboardStats.topProducts[0].count) * 100}%` }}
                                  ></div>
                              </div>
                          </div>
@@ -1519,17 +1527,17 @@ const App: React.FC = () => {
          )}
 
          {/* Next Up */}
-         {nextAppointment ? (
+         {dashboardStats.nextAppointment ? (
             <div className="bg-gradient-to-r from-rose-500 to-purple-600 p-5 rounded-2xl text-white shadow-lg relative overflow-hidden">
                <div className="relative z-10">
                   <div className="flex justify-between items-start mb-4">
                      <div>
                         <span className="bg-white/20 px-2 py-1 rounded text-xs font-bold backdrop-blur-sm">Próximo Cliente</span>
-                        <h3 className="text-xl font-bold mt-2">{nextAppointment.clientName || 'Cliente sem nome'}</h3>
-                        <p className="text-white/80 text-sm">{nextAppointment.serviceName}</p>
+                        <h3 className="text-xl font-bold mt-2">{dashboardStats.nextAppointment.clientName || 'Cliente sem nome'}</h3>
+                        <p className="text-white/80 text-sm">{dashboardStats.nextAppointment.serviceName}</p>
                      </div>
                      <div className="text-right">
-                        <p className="text-2xl font-bold">{nextAppointment.time}</p>
+                        <p className="text-2xl font-bold">{dashboardStats.nextAppointment.time}</p>
                         <p className="text-xs text-white/60">Hoje</p>
                      </div>
                   </div>
@@ -1552,13 +1560,13 @@ const App: React.FC = () => {
          <div>
             <h3 className="font-bold text-slate-800 mb-3 flex justify-between items-center">
                Agenda de Hoje 
-               <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{today.split('-').reverse().join('/')}</span>
+               <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{dashboardStats.todayStr}</span>
             </h3>
             <div className="space-y-3">
-               {todaysAppointments.length === 0 ? (
+               {dashboardStats.todaysAppointments.length === 0 ? (
                   <p className="text-slate-400 text-sm text-center py-4">Nenhum agendamento para hoje.</p>
                ) : (
-                  todaysAppointments.sort((a,b) => a.time.localeCompare(b.time)).map(app => (
+                  dashboardStats.todaysAppointments.sort((a,b) => a.time.localeCompare(b.time)).map(app => (
                      <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
                         <div className="flex items-center gap-3">
                            <div className="bg-slate-50 font-bold text-slate-700 px-3 py-2 rounded-lg text-sm border border-slate-200">
@@ -1719,7 +1727,10 @@ const App: React.FC = () => {
                                <Star size={16} className="text-amber-400 fill-amber-400" />
                                <span className="font-bold">{currentSalonMetadata.rating}</span>
                            </div>
-                           <button onClick={() => setIsLoginModalOpen(true)} className="mt-2 bg-white/20 p-2 rounded-full text-white hover:bg-white/30 backdrop-blur-md"><Lock size={16}/></button>
+                           {/* CADEADO DO DONO DO SALÃO (RECOLOCADO CONFORME PEDIDO) */}
+                           <button onClick={() => setIsLoginModalOpen(true)} className="mt-2 bg-white/20 p-2 rounded-full text-white hover:bg-white/30 backdrop-blur-md shadow-md">
+                               <Lock size={16}/>
+                           </button>
                       </div>
                   </div>
               </div>
@@ -2021,7 +2032,7 @@ const App: React.FC = () => {
         <div className="animate-fadeIn space-y-6 pb-20">
              <div className="flex justify-between items-center">
                  <div>
-                     <h2 className="text-xl font-bold text-slate-800">Olá, {currentUser?.name.split(' ')[0]}</h2>
+                     <h2 className="text-xl font-bold text-slate-800">Olá, {currentUser?.name ? currentUser.name.split(' ')[0] : 'Cliente'}</h2>
                      <p className="text-sm text-slate-500">Bem-vindo de volta!</p>
                  </div>
                  <button onClick={handleLogout} className="text-xs font-bold text-slate-400 hover:text-red-500">Sair</button>
