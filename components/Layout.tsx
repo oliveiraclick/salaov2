@@ -40,8 +40,8 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
       <header className="bg-white shadow-sm sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
         <div>
            {isMarketplace ? (
-             <h1 className="text-xl font-bold bg-gradient-to-r from-rose-500 to-purple-600 bg-clip-text text-transparent">
-              Beleza<span className="font-light text-slate-400">App</span>
+             <h1 className="text-xl font-bold bg-gradient-to-r from-rose-500 to-purple-600 bg-clip-text text-transparent uppercase tracking-tight">
+              SALÃO ONLINE
             </h1>
            ) : (
              <h1 className="text-xl font-bold text-slate-800 truncate max-w-[200px]">

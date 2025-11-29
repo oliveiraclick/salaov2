@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
@@ -92,7 +91,7 @@ const App: React.FC = () => {
 
   // Finance
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
-  const [transactionForm, setTransactionForm] = useState<Partial<Transaction>>({ 
+  const [transactionForm, setTransactionForm] = useState<Partial<Omit<Transaction, 'category'>> & { category?: string }>({ 
       type: 'expense', 
       date: new Date().toISOString().split('T')[0],
       category: 'Outros' // Default category
@@ -110,8 +109,14 @@ const App: React.FC = () => {
   // SaaS Admin Tab State
   const [saasTab, setSaasTab] = useState<'overview' | 'partners' | 'plans'>('overview');
 
+  // Marketplace State
+  const [showAllSalons, setShowAllSalons] = useState(false);
+
   // Memoized Data
   const platformSalons = useMemo(() => getPlatformSalons(), []);
+  // Memoize random salons to prevent reshuffle on re-render
+  const randomSalons = useMemo(() => [...getPlatformSalons()].sort(() => 0.5 - Math.random()), []);
+
   const services = useMemo(() => getServices(), [view, isEditingService]); // Refresh on edit
   const products = useMemo(() => getProducts(), [view, isEditingProduct]);
   const employees = useMemo(() => getEmployees(), [view, isEditingEmployee]);
@@ -201,7 +206,7 @@ const App: React.FC = () => {
 
   const handleShare = async () => {
     const shareData = {
-      title: salonName || 'BelezaManager',
+      title: salonName || 'Salão Online',
       text: `Agende seu horário no ${salonName || 'nosso salão'}!`,
       url: window.location.href,
     };
@@ -216,6 +221,25 @@ const App: React.FC = () => {
       navigator.clipboard.writeText(window.location.href);
       alert('Link copiado!');
     }
+  };
+
+  // --- ACTIONS FOR PUBLIC SALON PAGE ---
+  const openWhatsApp = () => {
+      const phone = currentSettings.phone.replace(/\D/g, '');
+      if (!phone) {
+          alert("WhatsApp não configurado para este salão.");
+          return;
+      }
+      window.open(`https://wa.me/55${phone}`, '_blank');
+  };
+
+  const openMaps = () => {
+      const address = currentSettings.address;
+      if (!address || address === 'Endereço não configurado') {
+          alert("Endereço não disponível.");
+          return;
+      }
+      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank');
   };
 
   // --- IMAGE UPLOAD HELPER ---
@@ -1247,6 +1271,18 @@ const App: React.FC = () => {
                         value={settingsForm.shopName}
                         onChange={e => setSettingsForm({...settingsForm, shopName: e.target.value})}
                     />
+                     <input 
+                        className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                        placeholder="Endereço" 
+                        value={settingsForm.address}
+                        onChange={e => setSettingsForm({...settingsForm, address: e.target.value})}
+                    />
+                     <input 
+                        className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                        placeholder="Telefone / WhatsApp (apenas números)" 
+                        value={settingsForm.phone}
+                        onChange={e => setSettingsForm({...settingsForm, phone: e.target.value})}
+                    />
                     <div className="flex gap-4">
                         <div className="flex-1">
                             <label className="text-xs font-bold text-slate-400 ml-1">Abertura</label>
@@ -1444,10 +1480,10 @@ const App: React.FC = () => {
       <div className="bg-white rounded-t-[2rem] -mt-6 relative z-10 p-6 space-y-8">
           {/* Quick Actions */}
           <div className="flex gap-4">
-              <button className="flex-1 bg-emerald-50 py-3 rounded-2xl flex items-center justify-center gap-2 text-emerald-700 font-bold text-sm">
+              <button onClick={openWhatsApp} className="flex-1 bg-emerald-50 py-3 rounded-2xl flex items-center justify-center gap-2 text-emerald-700 font-bold text-sm">
                   <Phone size={18} /> WhatsApp
               </button>
-              <button className="flex-1 bg-blue-50 py-3 rounded-2xl flex items-center justify-center gap-2 text-blue-700 font-bold text-sm">
+              <button onClick={openMaps} className="flex-1 bg-blue-50 py-3 rounded-2xl flex items-center justify-center gap-2 text-blue-700 font-bold text-sm">
                   <MapPin size={18} /> Rota
               </button>
           </div>
@@ -1494,17 +1530,17 @@ const App: React.FC = () => {
           </div>
 
           {/* Location */}
-          <div className="bg-slate-50 p-6 rounded-[2rem]">
+          <div className="bg-slate-50 p-6 rounded-[2rem] cursor-pointer" onClick={openMaps}>
               <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2"><MapPin size={18}/> Localização</h3>
               <p className="text-sm text-slate-500 mb-4">{currentSettings.address}</p>
-              <div className="h-32 bg-slate-200 rounded-xl w-full flex items-center justify-center text-slate-400 font-bold text-xs">
-                  MAPA INDISPONÍVEL
+              <div className="h-32 bg-slate-200 rounded-xl w-full flex items-center justify-center text-slate-400 font-bold text-xs hover:bg-slate-300 transition-colors">
+                  <Map size={24} className="mr-2"/> VER NO MAPA
               </div>
           </div>
           
           <div className="text-center pt-8 border-t border-slate-100">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">Powered by</p>
-              <span className="text-lg font-black text-slate-300">BelezaApp</span>
+              <span className="text-lg font-black text-slate-300">SALÃO ONLINE</span>
           </div>
       </div>
     </div>
@@ -1597,7 +1633,7 @@ const App: React.FC = () => {
                               </div>
                               <div className="text-right">
                                   <p className="font-bold text-rose-600 text-sm">{tenant.plan}</p>
-                                  <p className="text-[10px] text-slate-400">R$ {tenant.mrr}/mês</p>
+                                  <p className="text-xs text-slate-400">R$ {tenant.mrr}/mês</p>
                               </div>
                           </div>
                       ))}
@@ -1728,11 +1764,9 @@ const App: React.FC = () => {
         <header className="flex justify-between items-center mb-10">
           <div className="flex items-center gap-2">
             <div className="bg-rose-600 p-1.5 rounded-lg text-white"><Scissors size={18} /></div>
-            <span className="font-black text-slate-800 text-lg tracking-tight">BelezaApp <span className="text-slate-300 font-light">Pro</span></span>
+            <span className="font-black text-slate-800 text-lg tracking-tight">SALÃO ONLINE <span className="text-slate-300 font-light">PRO</span></span>
           </div>
-          <button onClick={() => setShowAdminLogin(true)} className="flex items-center gap-1.5 text-slate-500 font-bold text-xs hover:text-rose-600 transition-colors">
-            <Lock size={14} /> Área do Parceiro
-          </button>
+          {/* Removed Area do Parceiro Button */}
         </header>
 
         <div className="flex flex-col items-center text-center max-w-lg mx-auto">
@@ -1757,7 +1791,7 @@ const App: React.FC = () => {
                  ))}
               </div>
               <span className="font-bold text-rose-600 pl-12 flex items-center gap-2">
-                <Heart size={18} className="fill-rose-600" /> Quero me Cuidar
+                <Heart size={18} className="fill-rose-600" /> Já aderiram
               </span>
             </button>
             
@@ -1767,10 +1801,10 @@ const App: React.FC = () => {
             </div>
 
             <button 
-              onClick={() => setShowAdminLogin(true)}
+              onClick={() => document.getElementById('plans-section')?.scrollIntoView({ behavior: 'smooth' })}
               className="w-full bg-slate-900 text-white py-4 rounded-full font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
             >
-              <Store size={18} /> Sou Profissional
+              <Store size={18} /> Eu Quero
             </button>
 
             {/* Social Login Button */}
@@ -1788,7 +1822,7 @@ const App: React.FC = () => {
             </button>
 
             {/* Store Badges */}
-            <div className="flex justify-center gap-3 mt-4">
+            <div className="flex justify-center gap-3 mt-4 opacity-60 hover:opacity-100 transition-opacity">
                  <button className="bg-slate-900 text-white px-4 py-2 rounded-xl flex items-center gap-2 pr-5 hover:bg-slate-800 transition-colors">
                     <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.74 1.18 0 2.48-1.23 3.66-1.14 1.27.1 2.27.68 2.93 1.55-2.61 1.49-2.16 5.86.32 7.15-.55 1.55-1.37 3.09-2 4.67zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
                     <div className="text-left">
@@ -1843,7 +1877,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Pricing */}
-      <div className="px-6 pb-20 max-w-lg mx-auto">
+      <div id="plans-section" className="px-6 pb-20 max-w-lg mx-auto">
         <h2 className="text-2xl font-black text-center text-slate-800 mb-2">Planos para todos os tamanhos</h2>
         <p className="text-center text-slate-500 text-sm mb-10">Escolha o ideal para o seu momento.</p>
 
@@ -1886,7 +1920,7 @@ const App: React.FC = () => {
       </div>
       
       <footer className="bg-slate-900 text-slate-400 py-12 px-6 text-center">
-        <p className="text-xs mb-4">© 2024 BelezaApp SaaS. Todos os direitos reservados.</p>
+        <p className="text-xs mb-4">© 2024 SALÃO ONLINE SaaS. Todos os direitos reservados.</p>
         <button onClick={() => setShowAdminLogin(true)} className="text-xs font-bold text-slate-600 hover:text-white transition-colors">
           Área Restrita
         </button>
@@ -1955,7 +1989,7 @@ const App: React.FC = () => {
               </header>
 
               <div className="grid gap-4">
-                  {platformSalons.map(salon => (
+                  {(showAllSalons ? platformSalons : randomSalons.slice(0, 3)).map(salon => (
                       <button 
                           key={salon.id}
                           onClick={() => handleSalonSelect(salon)}
@@ -1975,6 +2009,15 @@ const App: React.FC = () => {
                       </button>
                   ))}
               </div>
+              
+              {!showAllSalons && (
+                  <button 
+                    onClick={() => setShowAllSalons(true)}
+                    className="w-full mt-6 bg-slate-900 text-white py-4 rounded-full font-bold shadow-lg"
+                  >
+                    Ver Lista Completa
+                  </button>
+              )}
           </div>
       )}
       {view === ViewState.SAAS_ADMIN && renderSaasAdmin()}
@@ -2200,6 +2243,7 @@ const App: React.FC = () => {
                                         className="w-full p-4 bg-slate-50 rounded-2xl font-medium outline-none focus:ring-2 focus:ring-rose-500/20"
                                         value={clientName}
                                         onChange={e => setClientName(e.target.value)}
+                                        readOnly={!isNewClient} // Make read-only if existing client
                                     />
                                     {isNewClient && (
                                         <div className="animate-fade-in">
@@ -2215,7 +2259,7 @@ const App: React.FC = () => {
                                 </div>
                             )}
 
-                            <button onClick={confirmBooking} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-xl shadow-emerald-500/20 mt-4 transition-all">
+                            <button onClick={confirmBooking} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-4 rounded-2xl font-bold shadow-xl shadow-rose-600/20 mt-4 transition-all">
                                 Confirmar Agendamento
                             </button>
                         </div>
@@ -2223,12 +2267,43 @@ const App: React.FC = () => {
 
                     {/* Step 6: Success */}
                     {bookingStep === 6 && (
-                        <div className="flex flex-col items-center justify-center text-center py-10 animate-scale-in">
+                        <div className="flex flex-col items-center justify-center text-center py-6 animate-scale-in">
                             <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-500 mb-6">
                                 <Check size={48} strokeWidth={3} />
                             </div>
                             <h3 className="text-2xl font-black text-slate-800 mb-2">Agendado!</h3>
                             <p className="text-slate-500 mb-8 max-w-xs">Seu horário foi reservado com sucesso. Te esperamos lá!</p>
+
+                            {/* Booking Summary Card in Success View */}
+                            <div className="bg-slate-50 p-6 rounded-[2rem] w-full text-left mb-6 border border-slate-100">
+                                <h4 className="font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">Resumo do Pedido</h4>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm text-slate-600 font-medium">{selectedServiceForBooking?.name}</span>
+                                        <span className="text-sm font-bold text-slate-800">R$ {selectedServiceForBooking?.price}</span>
+                                    </div>
+                                    
+                                    {bookingCart.length > 0 && (
+                                        <>
+                                            <div className="border-t border-slate-200 my-2"></div>
+                                            {bookingCart.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-sm">
+                                                    <span className="text-slate-500">{item.quantity}x {item.product.name}</span>
+                                                    <span className="font-bold text-slate-700">R$ {item.product.price * item.quantity}</span>
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
+
+                                    <div className="border-t border-slate-200 pt-3 mt-2 flex justify-between items-center">
+                                        <span className="font-black text-slate-800">Total Pago</span>
+                                        <span className="font-black text-xl text-rose-600">
+                                            R$ {selectedServiceForBooking ? (selectedServiceForBooking.price + bookingCart.reduce((a, i) => a + (i.product.price * i.quantity), 0)) : 0}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <button onClick={closeBookingModal} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold">
                                 Voltar ao Início
                             </button>
