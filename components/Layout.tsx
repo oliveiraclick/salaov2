@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ViewState } from '../types';
 import { Scissors, Package, Settings, Users, Store, LayoutDashboard, LogIn, Wallet, Calendar, ShoppingBag } from 'lucide-react';
@@ -16,7 +15,11 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
   const isPublicMode = currentView === ViewState.PUBLIC_SALON || currentView === ViewState.MARKETPLACE || currentView === ViewState.CLIENT_AUTH || currentView === ViewState.CLIENT_STORE || currentView === ViewState.SAAS_LP;
   const isMarketplace = currentView === ViewState.MARKETPLACE;
   const isSaaS_LP = currentView === ViewState.SAAS_LP;
-  const isClientView = isPublicMode && !isMarketplace && !isSaaS_LP;
+  const isSalonView = currentView === ViewState.PUBLIC_SALON;
+  
+  // Logic to determine if we show the Client Bottom Nav
+  // Show if we are in the Salon View (Public Mode) but NOT in Marketplace or SaaS LP
+  const isClientView = isSalonView; 
 
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState; icon: any; label: string }) => (
     <button
@@ -32,9 +35,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800 font-sans">
-      {/* Header */}
-      {!isSaaS_LP && (
-      <header className="bg-white shadow-sm sticky top-0 z-20 px-6 py-4 flex justify-between items-center">
+      {/* Header - Show only if NOT SaaS LP and NOT Public Salon (Salon has its own immersive header) */}
+      {!isSaaS_LP && !isSalonView && (
+      <header className="bg-white shadow-sm sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
         <div>
            {isMarketplace ? (
              <h1 className="text-xl font-bold bg-gradient-to-r from-rose-500 to-purple-600 bg-clip-text text-transparent">
@@ -56,13 +59,14 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
       )}
 
       {/* Main Content */}
-      <main className={`flex-1 overflow-y-auto ${isSaaS_LP ? '' : 'p-4 pb-24'} max-w-3xl mx-auto w-full`}>
+      {/* Remove padding for SalonView to allow full-bleed immersive headers */}
+      <main className={`flex-1 overflow-y-auto ${isSaaS_LP || isSalonView ? '' : 'p-4 pb-24'} max-w-3xl mx-auto w-full no-scrollbar`}>
         {children}
       </main>
 
-      {/* Bottom Navigation - Only show for Admin views */}
+      {/* Bottom Navigation - SALON ADMIN */}
       {!isPublicMode && currentView !== ViewState.SAAS_ADMIN && currentView !== ViewState.SAAS_PLANS && (
-        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] overflow-x-auto">
+        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-50 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] overflow-x-auto">
           <NavItem view={ViewState.DASHBOARD} icon={LayoutDashboard} label="Início" />
           <NavItem view={ViewState.FINANCE} icon={Wallet} label="Financeiro" />
           <NavItem view={ViewState.SERVICES} icon={Scissors} label="Serviços" />
@@ -72,9 +76,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
         </nav>
       )}
 
-      {/* Bottom Nav for Public Client View */}
+      {/* Bottom Nav - CLIENT (Public Salon View) */}
       {isClientView && onClientTabChange && (
-        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-50 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
            <button 
              onClick={() => onClientTabChange('home')}
              className={`flex flex-col items-center justify-center w-full py-3 transition-colors duration-200 ${
@@ -105,9 +109,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
         </nav>
       )}
 
-      {/* Bottom Nav for Marketplace Home */}
+      {/* Bottom Nav - MARKETPLACE */}
       {isMarketplace && (
-         <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-30 pb-safe px-6 py-3">
+         <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center z-50 pb-safe px-6 py-3">
              <button className="flex flex-col items-center text-rose-600">
                 <Store size={24} />
                 <span className="text-xs font-bold mt-1">Explorar</span>
