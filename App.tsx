@@ -1,2405 +1,2730 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ViewState, Service, Product, Employee, ShopSettings, Appointment, SalonMetadata, Client, Transaction, Coupon, Tenant, SaasPlan } from './types';
-import * as Storage from './services/storage';
-import * as Gemini from './services/gemini';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
-import { Plus, Trash2, Wand2, Clock, DollarSign, Box, CheckCircle2, Scissors, Package, Users, Phone, Calendar, ChevronLeft, User, Image as ImageIcon, X, CalendarDays, AlertCircle, Star, Search, MapPin as MapPinIcon, ArrowRight, ArrowLeft, Share2, ShoppingBag, TrendingUp, Wallet, LogIn, Eye, BarChart3, Trophy, KeyRound, Ticket, TrendingDown, Lock, Pencil, ExternalLink, LogOut, Minus, Rocket, ShieldCheck, Zap, Globe, Briefcase, LayoutList, Heart, Check, Store } from 'lucide-react';
+import { ViewState, SalonMetadata, Service, Appointment, Product, Transaction, Employee, Client, ShopSettings, Tenant, SaasPlan } from './types';
+import { getPlatformSalons, setCurrentNamespace, getSettings, getServices, getEmployees, saveAppointments, getAppointments, getProducts, addTransaction, saveTransactions, getClients, saveClient, getTransactions, saveServices, saveProducts, saveEmployees, saveSettings, incrementViews, getTenants, getSaasPlans, saveSaasPlans } from './services/storage';
+import { Calendar, LayoutDashboard, Scissors, Store, Users, Wallet, Settings, Package, Percent, MapPin, Phone, Star, Share2, Lock, ArrowLeft, Clock, Search, ChevronRight, Check, Globe, Zap, Heart, CheckCircle2, X, User, Plus, Minus, Trash2, ShoppingBag, DollarSign, CalendarDays, History, AlertCircle, LogOut, TrendingUp, TrendingDown, Edit2, Camera, Save, BarChart3, Shield, Map, CreditCard, Tag } from 'lucide-react';
+
+// Helper interface for local cart state
+interface CartItem {
+  product: Product;
+  quantity: number;
+}
 
 const App: React.FC = () => {
-  // --- STATE WITH LAZY INITIALIZATION (PERFORMANCE FIX) ---
-  // Change default view to SAAS_LP (Sales Home)
   const [view, setView] = useState<ViewState>(ViewState.SAAS_LP);
+  const [activeClientTab, setActiveClientTab] = useState<'home' | 'appointments' | 'store'>('home');
+  const [salonName, setSalonName] = useState<string>('');
   
-  const [services, setServices] = useState<Service[]>(() => Storage.getServices());
-  const [products, setProducts] = useState<Product[]>(() => Storage.getProducts());
-  const [employees, setEmployees] = useState<Employee[]>(() => Storage.getEmployees());
-  const [appointments, setAppointments] = useState<Appointment[]>(() => Storage.getAppointments());
-  const [settings, setSettings] = useState<ShopSettings>(() => Storage.getSettings());
+  // State for Admin Modal
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminPass, setAdminPass] = useState('');
+
+  // State for Booking Modal
+  const [selectedServiceForBooking, setSelectedServiceForBooking] = useState<Service | null>(null);
+  const [selectedEmployeeForBooking, setSelectedEmployeeForBooking] = useState<Employee | null>(null);
+  const [bookingStep, setBookingStep] = useState(1); // 1: Professional, 2: Products, 3: DateTime, 4: Info, 5: Success
+  const [bookingDate, setBookingDate] = useState<string>(''); // YYYY-MM-DD
+  const [bookingTime, setBookingTime] = useState<string>('');
   
-  // Financial & Client State
-  const [transactions, setTransactions] = useState<Transaction[]>(() => Storage.getTransactions());
-  const [coupons, setCoupons] = useState<Coupon[]>(() => Storage.getCoupons());
-  const [clients, setClients] = useState<Client[]>(() => Storage.getClients());
-  const [currentUser, setCurrentUser] = useState<Client | null>(null);
+  // Client Data for Booking
+  const [clientName, setClientName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [clientBirthDate, setClientBirthDate] = useState('');
+  const [isNewClient, setIsNewClient] = useState(false);
 
-  // Marketplace State
-  const [platformSalons, setPlatformSalons] = useState<SalonMetadata[]>(() => Storage.getPlatformSalons());
-  const [searchQuery, setSearchQuery] = useState('');
+  // Client Session (Account Tab)
+  const [clientLoggedInPhone, setClientLoggedInPhone] = useState<string | null>(null);
+  const [clientLoginInput, setClientLoginInput] = useState('');
 
-  // SaaS State
-  const [tenants, setTenants] = useState<Tenant[]>(() => Storage.getTenants());
-  const [saasPlans, setSaasPlans] = useState<SaasPlan[]>(() => Storage.getSaasPlans());
+  // Changed to CartItem array to support quantity
+  const [bookingCart, setBookingCart] = useState<CartItem[]>([]);
 
-  // Public/Landing Page State
-  const [showLandingPage, setShowLandingPage] = useState(false);
-  const [currentSalonMetadata, setCurrentSalonMetadata] = useState<SalonMetadata | null>(null);
-  
-  // Navigation State
+  // State for Admin Checkout
+  const [checkoutAppointment, setCheckoutAppointment] = useState<Appointment | null>(null);
+  // Changed to CartItem array to support quantity
+  const [checkoutCart, setCheckoutCart] = useState<CartItem[]>([]);
+
+  // Detect direct link (query param ?salon=slug)
   const [isDirectLink, setIsDirectLink] = useState(false);
 
-  // Shopping Cart State
-  const [cart, setCart] = useState<Product[]>([]);
+  // --- CRUD STATES ---
+  // Services
+  const [isEditingService, setIsEditingService] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [serviceForm, setServiceForm] = useState<Partial<Service>>({});
 
-  // Form States
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false); // Admin Login Modal
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  // Products
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [productForm, setProductForm] = useState<Partial<Product>>({});
+
+  // Team
+  const [isEditingEmployee, setIsEditingEmployee] = useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [employeeForm, setEmployeeForm] = useState<Partial<Employee>>({});
+
+  // Finance
+  const [isAddingTransaction, setIsAddingTransaction] = useState(false);
+  const [transactionForm, setTransactionForm] = useState<Partial<Transaction>>({ type: 'expense', date: new Date().toISOString().split('T')[0] });
+
+  // Settings
+  const [settingsForm, setSettingsForm] = useState<ShopSettings | null>(null);
+
+  // SaaS Plans CRUD
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planForm, setPlanForm] = useState<Partial<SaasPlan>>({ features: [] });
+  const [featureInput, setFeatureInput] = useState('');
+
+  // Memoized Data
+  const services = useMemo(() => getServices(), [view, isEditingService]); // Refresh on edit
+  const products = useMemo(() => getProducts(), [view, isEditingProduct]);
+  const employees = useMemo(() => getEmployees(), [view, isEditingEmployee]);
+  const appointments = useMemo(() => getAppointments(), [view, checkoutAppointment, bookingStep, activeClientTab]); 
+  const clients = useMemo(() => getClients(), [bookingStep, view]);
+  const transactions = useMemo(() => getTransactions(), [view, isAddingTransaction, checkoutAppointment]);
+  const currentSettings = useMemo(() => getSettings(), [view]);
   
-  const [editingItem, setEditingItem] = useState<Partial<Service | Product | Employee | Transaction | Coupon | SaasPlan> | null>(null);
-  const [isLoadingAI, setIsLoadingAI] = useState(false);
-  const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(null);
-
-  // Client Booking Wizard State
-  const [isBookingMode, setIsBookingMode] = useState(false);
-  const [bookingStep, setBookingStep] = useState(0); // 0: Service, 1: Professional, 2: Date/Time, 3: Confirm
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedTime, setSelectedTime] = useState<string>('');
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [couponCodeInput, setCouponCodeInput] = useState('');
-
-  // Client Auth State
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [authForm, setAuthForm] = useState({ name: '', phone: '', birthDate: '', password: '' });
-
-  // --- MEMOIZED STATS (HOISTED TO TOP LEVEL TO FIX REACT ERROR #310) ---
-  // IMPORTANT: Hooks must be at the top level, never inside conditional renders
-  
-  const saasStats = useMemo(() => {
-    const totalRevenue = tenants.reduce((acc, t) => acc + t.mrr, 0);
-    const totalTenants = tenants.length;
-    const activeTenants = tenants.filter(t => t.status === 'active').length;
-    const proTenants = tenants.filter(t => t.plan === 'pro').length;
-    return { totalRevenue, totalTenants, activeTenants, proTenants };
-  }, [tenants]);
-
-  const dashboardStats = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const todaysAppointments = appointments.filter(a => a.date === today && a.status !== 'cancelled');
-    const incomeToday = todaysAppointments.reduce((sum, a) => sum + a.totalPrice, 0);
-    const nextAppointment = todaysAppointments.filter(a => a.time > new Date().toLocaleTimeString().slice(0,5)).sort((a,b) => a.time.localeCompare(b.time))[0];
-
-    const completedApps = appointments.filter(a => a.status === 'completed');
-    const totalRevenue = completedApps.reduce((sum, a) => sum + a.totalPrice, 0);
-    const avgTicket = completedApps.length > 0 ? totalRevenue / completedApps.length : 0;
-    
-    const cancelledCount = appointments.filter(a => a.status === 'cancelled').length;
-    const totalAppsCount = appointments.length;
-    const cancellationRate = totalAppsCount > 0 ? (cancelledCount / totalAppsCount) * 100 : 0;
-
-    // Weekly Flow
-    const flowData = new Array(7).fill(0);
-    appointments.forEach(a => {
-        const date = new Date(a.date);
-        const dayIndex = date.getDay(); // 0 (Sun) - 6 (Sat)
-        flowData[dayIndex]++;
-    });
-    const maxFlow = Math.max(...flowData, 1);
-
-    // Top Products
-    const productSales: {[key:string]: {count: number, name: string}} = {};
-    appointments.forEach(a => {
-        if(a.products) {
-            a.products.forEach(p => {
-                if(!productSales[p.id]) productSales[p.id] = {count: 0, name: p.name};
-                productSales[p.id].count++;
-            });
-        }
-    });
-    const topProducts = Object.values(productSales).sort((a,b) => b.count - a.count).slice(0, 3);
-    const todayStr = today.split('-').reverse().join('/');
-    const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-    return { todayStr, todaysAppointments, incomeToday, nextAppointment, avgTicket, cancellationRate, flowData, maxFlow, topProducts, weekDays };
-  }, [appointments]);
-
-  // --- INITIALIZATION & ROUTING SIMULATION ---
+  // SaaS Data
+  const tenants = useMemo(() => getTenants(), [view]);
+  const saasPlans = useMemo(() => getSaasPlans(), [view, isEditingPlan]);
 
   useEffect(() => {
-    // 1. Load Marketplace & SaaS Data
-    const allSalons = Storage.getPlatformSalons();
-    setPlatformSalons(allSalons);
-    setTenants(Storage.getTenants());
-    setSaasPlans(Storage.getSaasPlans());
+    // Check URL parameters on mount
+    const params = new URLSearchParams(window.location.search);
+    const salonSlug = params.get('salon');
 
-    // 2. Check URL Params for deep linking
-    const urlParams = new URLSearchParams(window.location.search);
-    const salonSlug = urlParams.get('salon');
-    const isAdmin = urlParams.get('admin');
-    const isSaas = urlParams.get('saas');
-
-    if (isSaas === 'admin') {
-      setView(ViewState.SAAS_ADMIN);
-    } else if (isAdmin) {
-      handleAdminLogin();
-    } else if (salonSlug) {
-      // Direct Link Logic
+    if (salonSlug) {
       setIsDirectLink(true);
-      const metadata = allSalons.find(s => s.slug === salonSlug);
-      if (metadata) {
-        handleNavigateToSalon(salonSlug, metadata, false);
-      } else {
-        // Fallback if slug not found, but technically this shouldn't happen for a valid direct link
-        setView(ViewState.MARKETPLACE);
-      }
-    } else {
-      // Default to SaaS Landing Page (Sales Home) when accessing domain root
-      setView(ViewState.SAAS_LP);
+      setCurrentNamespace(salonSlug);
+      incrementViews();
+      const settings = getSettings();
+      setSalonName(settings.shopName);
+      setView(ViewState.PUBLIC_SALON);
     }
-
-    // Handle Browser Back Button
-    const handlePopState = () => {
-       const params = new URLSearchParams(window.location.search);
-       const slug = params.get('salon');
-       const saas = params.get('saas');
-       
-       if (saas === 'admin') {
-           setView(ViewState.SAAS_ADMIN);
-       } else if (slug) {
-         const meta = allSalons.find(s => s.slug === slug);
-         if (meta) handleNavigateToSalon(slug, meta, false);
-       } else {
-         // If back to root, show Sales LP
-         setView(ViewState.SAAS_LP);
-       }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    
-    // Cleanup
-    return () => {
-        window.removeEventListener('popstate', handlePopState);
-    };
   }, []);
 
-  const loadSalonData = () => {
-    setServices(Storage.getServices());
-    setProducts(Storage.getProducts());
-    setEmployees(Storage.getEmployees());
-    setAppointments(Storage.getAppointments());
-    setSettings(Storage.getSettings());
-    setTransactions(Storage.getTransactions());
-    setCoupons(Storage.getCoupons());
-    setClients(Storage.getClients());
-  };
-
-  // --- NAVIGATION HANDLERS ---
-
-  const handleNavigateToSalon = (slug: string, metadata?: SalonMetadata, updateHistory = true) => {
-    Storage.setCurrentNamespace(slug);
-    Storage.incrementViews();
-
-    const meta = metadata || platformSalons.find(s => s.slug === slug) || null;
-    setCurrentSalonMetadata(meta);
-
-    loadSalonData();
-    setCart([]); 
-
-    setView(ViewState.PUBLIC_SALON);
-    setShowLandingPage(true);
-    
-    if (updateHistory) {
-      const newUrl = `${window.location.pathname}?salon=${slug}`;
-      window.history.pushState({ path: newUrl }, '', newUrl);
+  useEffect(() => {
+    // Update salon name when view changes
+    if (view === ViewState.PUBLIC_SALON || view === ViewState.DASHBOARD) {
+      const settings = getSettings();
+      setSalonName(settings.shopName);
+      setSettingsForm(settings);
     }
+  }, [view]);
+
+  // Set default booking date to today on mount
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    setBookingDate(today);
+  }, []);
+
+  // Smart Client Detection in Booking
+  useEffect(() => {
+      if (bookingStep === 4 && clientPhone.length >= 8) {
+          const foundClient = clients.find(c => c.phone === clientPhone);
+          if (foundClient) {
+              setClientName(foundClient.name);
+              setIsNewClient(false);
+          } else {
+              setIsNewClient(true);
+          }
+      }
+  }, [clientPhone, bookingStep, clients]);
+
+  const handleSalonSelect = (salon: SalonMetadata) => {
+    setCurrentNamespace(salon.slug);
+    setSalonName(salon.name);
+    setView(ViewState.PUBLIC_SALON);
   };
 
-  const handleBackToMarketplace = (updateHistory = true) => {
-    setView(ViewState.MARKETPLACE);
-    setShowLandingPage(false);
-    setCurrentUser(null);
-    setIsBookingMode(false);
-    setCurrentSalonMetadata(null);
-    
-    if (updateHistory) {
-      const newUrl = window.location.pathname;
-      window.history.pushState({ path: newUrl }, '', newUrl);
+  const handleAdminLogin = () => {
+    if (adminPass === 'admin123') { 
+      // Login Dono do Salão
+      setShowAdminLogin(false);
+      setAdminPass('');
+      setView(ViewState.DASHBOARD);
+    } else if (adminPass === 'saas123') {
+      // Login Super Admin (SaaS Platform)
+      setShowAdminLogin(false);
+      setAdminPass('');
+      setView(ViewState.SAAS_ADMIN);
+    } else {
+      alert('Senha incorreta. (Tente: admin123 ou saas123)');
     }
   };
 
   const handleAdminLogout = () => {
-      if(confirm("Deseja realmente sair da área administrativa?")) {
-          // If we are managing a specific salon, go back to its public cover page (Locked View)
-          if (currentSalonMetadata) {
-             setView(ViewState.PUBLIC_SALON);
-             setShowLandingPage(true);
-             setIsBookingMode(false);
-             // We KEEP the currentSalonMetadata so the page remains loaded
-          } else {
-              // If super admin or generic context, go to SaaS Sales Page
-              setView(ViewState.SAAS_LP); 
-              setCurrentSalonMetadata(null); 
-              const newUrl = window.location.pathname; // Strips params usually, or just use '/'
-              window.history.pushState({ path: newUrl }, '', newUrl);
-          }
-      }
-  };
-
-  const handleAdminLogin = () => {
-    // Logic for Super Admin Login (Demo)
-    if (loginEmail === 'super@admin.com') {
-      setView(ViewState.SAAS_ADMIN);
-      setIsLoginModalOpen(false);
-      return;
-    }
-
-    // If we are NOT in a specific salon (i.e. Marketplace or SaaS LP), switch to demo admin.
-    // If we ARE in a salon (currentSalonMetadata is set), we assume we are logging into THIS salon.
-    if (!currentSalonMetadata) {
-        const adminNamespace = 'admin_demo_account';
-        Storage.setCurrentNamespace(adminNamespace);
-    }
-    // Else: we keep the current namespace so the owner manages THEIR salon.
-
-    // Seed data if empty
-    const currentServices = Storage.getServices();
-    if (currentServices.length === 0) {
-        Storage.saveServices(Storage.getServices());
-        Storage.saveProducts(Storage.getProducts());
-        Storage.saveEmployees(Storage.getEmployees());
-        
-        // Seed Appointments & Transactions for demo purposes
-        const mockHistory: Appointment[] = [];
-        const mockTransactions: Transaction[] = [];
-        const today = new Date();
-        
-        // Expense seeds
-        mockTransactions.push({
-             id: generateId(), title: 'Conta de Luz', amount: 350, type: 'expense', category: 'operational', status: 'paid', date: new Date().toISOString().split('T')[0]
-        });
-        mockTransactions.push({
-             id: generateId(), title: 'Aluguel', amount: 1500, type: 'expense', category: 'operational', status: 'pending', date: new Date().toISOString().split('T')[0]
-        });
-
-        for (let i = 0; i < 7; i++) {
-           const date = new Date(today);
-           date.setDate(date.getDate() - i);
-           const dateStr = date.toISOString().split('T')[0];
-           
-           const count = Math.floor(Math.random() * 5) + 1;
-           for(let j=0; j<count; j++) {
-              const appId = generateId();
-              const price = 50;
-              const isCancelled = j % 4 === 0;
-              
-              mockHistory.push({
-                 id: appId,
-                 serviceId: '1',
-                 serviceName: 'Corte Clássico',
-                 employeeId: '1',
-                 employeeName: 'Carlos Navalha',
-                 date: dateStr,
-                 time: `${10+j}:00`,
-                 price: price,
-                 totalPrice: price,
-                 duration: 40,
-                 status: isCancelled ? 'cancelled' : 'completed',
-                 createdAt: date.getTime()
-              });
-
-              if (!isCancelled) {
-                  mockTransactions.push({
-                      id: generateId(),
-                      title: 'Corte Clássico - Cliente Mock',
-                      amount: price,
-                      type: 'income',
-                      category: 'service',
-                      status: 'paid',
-                      date: dateStr,
-                      relatedAppointmentId: appId
-                  });
-              }
-           }
-        }
-        Storage.saveAppointments(mockHistory);
-        Storage.saveTransactions(mockTransactions);
-        
-        const settings = Storage.getSettings();
-        if (settings.views === 0) {
-            settings.views = 1240;
-            Storage.saveSettings(settings);
-        }
-    }
-
-    loadSalonData();
-    setView(ViewState.DASHBOARD);
-    setShowLandingPage(false); 
-    setIsLoginModalOpen(false);
-    setLoginEmail('');
-    setLoginPassword('');
-  };
-  
-  const fillDemoLogin = () => {
-    setLoginEmail('admin@beleza.app');
-    setLoginPassword('123456');
-  };
-
-  const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
-
-  // --- CART HANDLERS ---
-  const getCartCount = (productId: string) => cart.filter(p => p.id === productId).length;
-
-  const handleAddToCart = (product: Product) => {
-    const currentCount = getCartCount(product.id);
-    if (currentCount < product.stock) {
-        setCart([...cart, product]);
+    if (isDirectLink) {
+        setView(ViewState.PUBLIC_SALON);
     } else {
-        alert("Estoque máximo atingido para este produto.");
+        setView(ViewState.SAAS_LP);
     }
   };
 
-  const handleRemoveOneFromCart = (productId: string) => {
-    const index = cart.findIndex(p => p.id === productId);
-    if (index > -1) {
-      const newCart = [...cart];
-      newCart.splice(index, 1);
-      setCart(newCart);
-    }
-  };
-
-  // --- SAVE HANDLERS ---
-
-  const handleSaveService = (e: React.FormEvent) => {
-    e.preventDefault();
-    const item = editingItem as Partial<Service>;
-    if (!item || !item.name) return;
-    const newItem: Service = { ...item, id: item.id || generateId(), duration: item.duration || 30 } as Service;
-    const updated = item.id ? services.map(s => s.id === newItem.id ? newItem : s) : [...services, newItem];
-    setServices(updated);
-    Storage.saveServices(updated);
-    setIsModalOpen(false);
-    setEditingItem(null);
-  };
-
-  const handleSaveProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-    const item = editingItem as Partial<Product>;
-    if (!item || !item.name) return;
-    const newItem: Product = { ...item, id: item.id || generateId(), price: item.price || 0, stock: item.stock || 0 } as Product;
-    const updated = item.id ? products.map(p => p.id === newItem.id ? newItem : p) : [...products, newItem];
-    setProducts(updated);
-    Storage.saveProducts(updated);
-    setIsModalOpen(false);
-    setEditingItem(null);
-  };
-
-  const handleSaveEmployee = (e: React.FormEvent) => {
-    e.preventDefault();
-    const item = editingItem as Partial<Employee>;
-    if (!item || !item.name) return;
-    const newItem: Employee = { ...item, id: item.id || generateId(), role: item.role || 'Profissional' } as Employee;
-    const updated = item.id ? employees.map(e => e.id === newItem.id ? newItem : e) : [...employees, newItem];
-    setEmployees(updated);
-    Storage.saveEmployees(updated);
-    setIsModalOpen(false);
-    setEditingItem(null);
-  };
-
-  const handleSaveTransaction = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!editingItem) return;
-      const item = editingItem as Transaction;
-      if (!item.title || !item.amount) return alert('Preencha os campos obrigatórios');
-
-      const newItem: Transaction = {
-          id: item.id || generateId(),
-          title: item.title,
-          amount: parseFloat(String(item.amount)),
-          type: item.type || 'expense',
-          category: item.category || 'operational',
-          status: item.status || 'paid',
-          date: item.date || new Date().toISOString().split('T')[0]
-      };
-
-      const updated = item.id ? transactions.map(t => t.id === newItem.id ? newItem : t) : [...transactions, newItem];
-      setTransactions(updated);
-      Storage.saveTransactions(updated);
-      setIsModalOpen(false);
-      setEditingItem(null);
-  };
-
-  const handleSaveCoupon = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!editingItem) return;
-      const item = editingItem as Coupon;
-      if (!item.code || !item.discount) return;
-
-      const newItem: Coupon = {
-          id: item.id || generateId(),
-          code: item.code.toUpperCase(),
-          discount: parseFloat(String(item.discount)),
-          type: item.type || 'fixed',
-          active: item.active ?? true,
-          usageCount: item.usageCount || 0
-      };
-
-      const updated = item.id ? coupons.map(c => c.id === newItem.id ? newItem : c) : [...coupons, newItem];
-      setCoupons(updated);
-      Storage.saveCoupons(updated);
-      setIsModalOpen(false);
-      setEditingItem(null);
-  };
-
-  const handleSavePlan = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingItem) return;
-    const item = editingItem as any;
-    if (!item.name) return;
-
-    let featuresList = item.features;
-    if (typeof item.features === 'string') {
-        featuresList = item.features.split(',').map((f: string) => f.trim()).filter((f: string) => f.length > 0);
-    }
-
-    const newItem: SaasPlan = {
-        id: item.id || generateId(),
-        name: item.name,
-        price: parseFloat(String(item.price || 0)),
-        features: featuresList || [],
-        isRecommended: item.isRecommended || false
+  const handleShare = async () => {
+    const shareData = {
+      title: salonName || 'BelezaManager',
+      text: `Agende seu horário no ${salonName || 'nosso salão'}!`,
+      url: window.location.href,
     };
 
-    const updated = item.id ? saasPlans.map(p => p.id === newItem.id ? newItem : p) : [...saasPlans, newItem];
-    setSaasPlans(updated);
-    Storage.saveSaasPlans(updated);
-    setIsModalOpen(false);
-    setEditingItem(null);
-  };
-
-
-  const handleDelete = (id: string, type: 'service' | 'product' | 'employee' | 'transaction' | 'coupon' | 'plan') => {
-    if (confirm('Tem certeza que deseja remover?')) {
-      if (type === 'service') {
-        const updated = services.filter(s => s.id !== id);
-        setServices(updated);
-        Storage.saveServices(updated);
-      } else if (type === 'product') {
-        const updated = products.filter(p => p.id !== id);
-        setProducts(updated);
-        Storage.saveProducts(updated);
-      } else if (type === 'employee') {
-        const updated = employees.filter(e => e.id !== id);
-        setEmployees(updated);
-        Storage.saveEmployees(updated);
-      } else if (type === 'transaction') {
-         const updated = transactions.filter(t => t.id !== id);
-         setTransactions(updated);
-         Storage.saveTransactions(updated);
-      } else if (type === 'coupon') {
-         const updated = coupons.filter(c => c.id !== id);
-         setCoupons(updated);
-         Storage.saveCoupons(updated);
-      } else if (type === 'plan') {
-         const updated = saasPlans.filter(p => p.id !== id);
-         setSaasPlans(updated);
-         Storage.saveSaasPlans(updated);
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Error sharing:', err);
       }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copiado!');
     }
   };
 
-  // --- AI HANDLERS ---
-  const handleGenerateDescription = async () => {
-    const item = editingItem as any;
-    if (!item?.name) return alert('Digite o nome primeiro');
-    setIsLoadingAI(true);
-    let type: 'service' | 'product' | 'employee' = 'service';
-    let extraInfo = '';
-    if (view === ViewState.PRODUCTS) type = 'product';
-    if (view === ViewState.TEAM) { type = 'employee'; extraInfo = (editingItem as Employee).role || ''; }
-    const desc = await Gemini.generateDescription(item.name, type, extraInfo);
-    setEditingItem(prev => ({ ...prev, description: desc } as any));
-    setIsLoadingAI(false);
-  };
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // --- IMAGE UPLOAD HELPER ---
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+    const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX_SIZE = 300;
-            let width = img.width, height = img.height;
-            if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
-            else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
-            canvas.width = width; canvas.height = height;
-            canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
-            setEditingItem(prev => ({ ...prev, photoUrl: canvas.toDataURL('image/jpeg', 0.8) } as any));
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 600;
+          const MAX_HEIGHT = 600;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          callback(dataUrl);
         };
-        img.src = event.target?.result as string;
+        img.src = e.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // --- SHARE HANDLER ---
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: currentSalonMetadata?.name || 'BelezaApp',
-          text: `Agende seu horário no ${currentSalonMetadata?.name}!`,
-          url: window.location.href,
-        });
-      } catch (error) {
-        console.log('Error sharing', error);
+  // --- CLIENT ACCOUNT LOGIC ---
+  const handleClientLogin = () => {
+      if (clientLoginInput.length < 8) {
+          alert("Por favor, digite um telefone válido.");
+          return;
       }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link copiado para a área de transferência!');
-    }
+      setClientLoggedInPhone(clientLoginInput);
   };
 
-  // --- CLIENT AUTH HANDLERS ---
+  const handleCancelAppointment = (appointmentId: string) => {
+      if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
+          const currentApps = getAppointments();
+          const updatedApps = currentApps.map(app => 
+              app.id === appointmentId ? { ...app, status: 'cancelled' as const } : app
+          );
+          saveAppointments(updatedApps);
+          setActiveClientTab('appointments'); 
+          setView(prev => prev); 
+      }
+  };
 
-  const handleAuthSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
+  // --- BOOKING LOGIC ---
+
+  const openBookingModal = (service: Service) => {
+    setSelectedServiceForBooking(service);
+    setSelectedEmployeeForBooking(null);
+    setBookingCart([]);
+    setBookingStep(1); 
+    setBookingTime('');
+    setClientName('');
+    setClientPhone('');
+    setClientBirthDate('');
+    setIsNewClient(false);
+  };
+
+  const closeBookingModal = () => {
+    setSelectedServiceForBooking(null);
+    setSelectedEmployeeForBooking(null);
+    setBookingCart([]);
+  };
+
+  const updateBookingQuantity = (product: Product, delta: number) => {
+    setBookingCart(prev => {
+      const existingItem = prev.find(item => item.product.id === product.id);
       
-      // Simple validation
-      if (!authForm.phone) return alert("Telefone obrigatório");
-
-      const existingClient = clients.find(c => c.phone === authForm.phone);
-
-      if (authMode === 'login') {
-          if (existingClient) {
-              if (existingClient.password && existingClient.password !== authForm.password) {
-                  return alert("Senha incorreta");
-              }
-              setCurrentUser(existingClient);
-              // After login, return to context
-              if (view === ViewState.CLIENT_STORE || view === ViewState.CLIENT_PREVIEW || view === ViewState.PUBLIC_SALON) {
-                  // Stay in view
-              } else {
-                  setView(ViewState.PUBLIC_SALON);
-              }
-          } else {
-              if (confirm("Número não encontrado. Deseja cadastrar?")) {
-                  setAuthMode('register');
-              }
-          }
-      } else {
-          // Register
-          if (existingClient) return alert("Cliente já cadastrado com este telefone.");
-          
-          const newClient: Client = {
-              id: generateId(),
-              name: authForm.name || 'Cliente',
-              phone: authForm.phone,
-              birthDate: authForm.birthDate,
-              password: authForm.password,
-              createdAt: Date.now()
-          };
-          Storage.saveClient(newClient);
-          setClients([...clients, newClient]);
-          setCurrentUser(newClient);
-          // Stay
-      }
-  };
-
-  const handleLogout = () => {
-      setCurrentUser(null);
-      // If we are in Direct Link mode, we don't want to go to Marketplace.
-      // We want to stay in the Salon Landing Page context.
-      if (isDirectLink) {
-          setIsBookingMode(false);
-          setShowLandingPage(true);
-          setView(ViewState.PUBLIC_SALON);
-      } else {
-          handleBackToMarketplace(true);
-      }
-  };
-
-  // --- BOOKING & ORDER HANDLERS ---
-
-  const handleApplyCoupon = () => {
-      const coupon = coupons.find(c => c.code === couponCodeInput.toUpperCase() && c.active);
-      if (coupon) {
-          setAppliedCoupon(coupon);
-          alert("Cupom aplicado com sucesso!");
-      } else {
-          alert("Cupom inválido ou expirado.");
-          setAppliedCoupon(null);
-      }
-  };
-
-  const handleProductOrder = () => {
-      if (cart.length === 0) return alert("Carrinho vazio");
-      if (!currentUser) return setView(ViewState.CLIENT_AUTH); // Force auth for orders
-
-      const productsTotal = cart.reduce((sum, p) => sum + p.price, 0);
-      
-      // Create Transaction
-      const newTransaction: Transaction = {
-          id: generateId(),
-          title: `Pedido Loja - ${currentUser.name}`,
-          amount: productsTotal,
-          type: 'income',
-          category: 'product',
-          status: 'pending',
-          date: new Date().toISOString().split('T')[0],
-      };
-      const updatedTrans = [...transactions, newTransaction];
-      setTransactions(updatedTrans);
-      Storage.saveTransactions(updatedTrans);
-
-      // Create Appointment placeholder for order tracking
-      const newOrder: Appointment = {
-          id: generateId(),
-          serviceId: 'product_order',
-          serviceName: 'Pedido de Produtos',
-          employeeId: null,
-          employeeName: 'Retirada na Loja',
-          products: cart,
-          clientId: currentUser.id,
-          clientName: currentUser.name,
-          date: new Date().toISOString().split('T')[0],
-          time: new Date().toLocaleTimeString().slice(0,5),
-          price: 0,
-          totalPrice: productsTotal,
-          duration: 0,
-          status: 'completed',
-          createdAt: Date.now()
-      };
-      const updatedApps = [...appointments, newOrder];
-      setAppointments(updatedApps);
-      Storage.saveAppointments(updatedApps);
-
-      // Update Stock
-      const updatedProducts = products.map(prod => {
-        const countInCart = cart.filter(p => p.id === prod.id).length;
-        if (countInCart > 0) {
-            return { ...prod, stock: Math.max(0, prod.stock - countInCart) };
+      if (existingItem) {
+        const newQty = existingItem.quantity + delta;
+        if (newQty <= 0) {
+          return prev.filter(item => item.product.id !== product.id);
         }
-        return prod;
-      });
-      setProducts(updatedProducts);
-      Storage.saveProducts(updatedProducts);
-
-      alert("Pedido realizado com sucesso! Retire no balcão.");
-      setCart([]);
-      // Go to appointments/orders tab
-      setView(ViewState.PUBLIC_SALON); // Will render dashboard since isBookingMode is false
+        return prev.map(item => item.product.id === product.id ? { ...item, quantity: newQty } : item);
+      } else if (delta > 0) {
+        return [...prev, { product, quantity: 1 }];
+      }
+      return prev;
+    });
   };
 
-  const handleConfirmBooking = () => {
-    if (!selectedService || !selectedDate || !selectedTime) return;
-
-    const productsTotal = cart.reduce((sum, p) => sum + p.price, 0);
-    let subTotal = selectedService.price + productsTotal;
-    let discount = 0;
-
-    if (appliedCoupon) {
-        if (appliedCoupon.type === 'fixed') {
-            discount = appliedCoupon.discount;
-        } else {
-            discount = (subTotal * appliedCoupon.discount) / 100;
-        }
+  const confirmBooking = () => {
+    if (!selectedServiceForBooking || !selectedEmployeeForBooking || !bookingDate || !bookingTime || !clientName || !clientPhone) {
+      alert("Por favor, preencha todos os campos.");
+      return;
     }
-    const finalPrice = Math.max(0, subTotal - discount);
+
+    if (isNewClient && !clientBirthDate) {
+        alert("Por favor, informe sua data de nascimento para o cadastro.");
+        return;
+    }
+
+    if (isNewClient) {
+        const newClient: Client = {
+            id: Date.now().toString(),
+            name: clientName,
+            phone: clientPhone,
+            birthDate: clientBirthDate,
+            createdAt: Date.now()
+        };
+        saveClient(newClient);
+    }
+
+    const finalProductsList: Product[] = [];
+    bookingCart.forEach(item => {
+        for(let i=0; i<item.quantity; i++) {
+            finalProductsList.push(item.product);
+        }
+    });
+
+    const productsTotal = finalProductsList.reduce((sum, p) => sum + p.price, 0);
+    const finalTotal = selectedServiceForBooking.price + productsTotal;
 
     const newAppointment: Appointment = {
-      id: generateId(),
-      serviceId: selectedService.id,
-      serviceName: selectedService.name,
-      employeeId: selectedEmployee ? selectedEmployee.id : null,
-      employeeName: selectedEmployee ? selectedEmployee.name : 'Preferência do Salão',
-      employeePhotoUrl: selectedEmployee?.photoUrl,
-      products: cart,
-      clientId: currentUser?.id,
-      clientName: currentUser?.name,
-      date: selectedDate,
-      time: selectedTime,
-      price: selectedService.price,
-      totalPrice: finalPrice,
-      discount: discount,
-      couponCode: appliedCoupon?.code,
-      duration: selectedService.duration,
+      id: Date.now().toString(),
+      serviceId: selectedServiceForBooking.id,
+      serviceName: selectedServiceForBooking.name,
+      employeeId: selectedEmployeeForBooking.id, 
+      employeeName: selectedEmployeeForBooking.name,
+      employeePhotoUrl: selectedEmployeeForBooking.photoUrl,
+      clientName: clientName,
+      clientId: clientPhone, 
+      date: bookingDate,
+      time: bookingTime,
+      price: selectedServiceForBooking.price,
+      products: finalProductsList,
+      totalPrice: finalTotal,
+      duration: selectedServiceForBooking.duration,
       status: 'scheduled',
       createdAt: Date.now()
     };
 
-    // 1. Save Appointment
-    const updatedApps = [...appointments, newAppointment];
-    setAppointments(updatedApps);
-    Storage.saveAppointments(updatedApps);
+    const currentAppointments = getAppointments();
+    saveAppointments([...currentAppointments, newAppointment]);
+    
+    setBookingStep(5); 
+  };
 
-    // 2. Update Product Stock
-    const updatedProducts = products.map(prod => {
-        const countInCart = cart.filter(p => p.id === prod.id).length;
-        if (countInCart > 0) {
-            return { ...prod, stock: Math.max(0, prod.stock - countInCart) };
+  // --- CHECKOUT LOGIC ---
+
+  const openCheckoutModal = (appointment: Appointment) => {
+    setCheckoutAppointment(appointment);
+    setCheckoutCart([]);
+  };
+
+  const closeCheckoutModal = () => {
+    setCheckoutAppointment(null);
+    setCheckoutCart([]);
+  };
+
+  const updateCheckoutQuantity = (product: Product, delta: number) => {
+    setCheckoutCart(prev => {
+      const existingItem = prev.find(item => item.product.id === product.id);
+      
+      if (existingItem) {
+        const newQty = existingItem.quantity + delta;
+        if (newQty <= 0) {
+          return prev.filter(item => item.product.id !== product.id);
         }
-        return prod;
+        return prev.map(item => item.product.id === product.id ? { ...item, quantity: newQty } : item);
+      } else if (delta > 0) {
+        return [...prev, { product, quantity: 1 }];
+      }
+      return prev;
     });
-    setProducts(updatedProducts);
-    Storage.saveProducts(updatedProducts);
-
-    // 3. Create Financial Transaction (Pending Income)
-    const newTransaction: Transaction = {
-        id: generateId(),
-        title: `Agendamento: ${selectedService.name} - ${currentUser?.name || 'Cliente'}`,
-        amount: finalPrice,
-        type: 'income',
-        category: 'service',
-        status: 'pending', // Previsão de recebimento
-        date: selectedDate,
-        relatedAppointmentId: newAppointment.id
-    };
-    const updatedTrans = [...transactions, newTransaction];
-    setTransactions(updatedTrans);
-    Storage.saveTransactions(updatedTrans);
-    
-    // 4. Update Coupon Usage
-    if (appliedCoupon) {
-        const updatedCoupons = coupons.map(c => 
-            c.id === appliedCoupon.id ? { ...c, usageCount: c.usageCount + 1 } : c
-        );
-        setCoupons(updatedCoupons);
-        Storage.saveCoupons(updatedCoupons);
-    }
-    
-    alert('Agendamento confirmado com sucesso!');
-    setIsBookingMode(false);
-    setBookingStep(0);
-    setSelectedService(null);
-    setSelectedEmployee(null);
-    setSelectedTime('');
-    setCart([]); 
-    setAppliedCoupon(null);
-    setCouponCodeInput('');
   };
 
-  const initiateCancelAppointment = (id: string) => setAppointmentToCancel(id);
+  const finalizeCheckout = () => {
+      if (!checkoutAppointment) return;
 
-  const confirmCancellation = () => {
-    if (appointmentToCancel) {
-      // Cancel Appointment
-      const updatedApps = appointments.map(app => 
-        app.id === appointmentToCancel ? { ...app, status: 'cancelled' as const } : app
-      );
-      setAppointments(updatedApps);
-      Storage.saveAppointments(updatedApps);
+      const currentApps = getAppointments();
+      const updatedApps = currentApps.map(app => {
+          if (app.id === checkoutAppointment.id) {
+              const existingProducts = app.products || [];
+              const newProducts: Product[] = [];
+              checkoutCart.forEach(item => {
+                  for(let i=0; i<item.quantity; i++) {
+                      newProducts.push(item.product);
+                  }
+              });
 
-      // Cancel/Delete Related Transaction
-      const updatedTrans = transactions.filter(t => t.relatedAppointmentId !== appointmentToCancel);
-      setTransactions(updatedTrans);
-      Storage.saveTransactions(updatedTrans);
+              const allProducts = [...existingProducts, ...newProducts];
+              const productsTotal = allProducts.reduce((sum, p) => sum + p.price, 0);
+              
+              const updatedApp = {
+                  ...app,
+                  status: 'completed' as const,
+                  products: allProducts,
+                  totalPrice: app.price + productsTotal
+              };
 
-      setAppointmentToCancel(null);
-    }
+              const transaction: Transaction = {
+                  id: Date.now().toString(),
+                  title: `Serviço: ${app.clientName}`,
+                  amount: updatedApp.totalPrice,
+                  type: 'income',
+                  category: 'service',
+                  status: 'paid',
+                  date: new Date().toISOString().split('T')[0],
+                  relatedAppointmentId: app.id
+              };
+              addTransaction(transaction);
+
+              return updatedApp;
+          }
+          return app;
+      });
+
+      saveAppointments(updatedApps);
+      closeCheckoutModal();
   };
 
-  // --- RENDER HELPERS ---
+  // --- CRUD HANDLERS ---
+  
+  // Services
+  const handleSaveService = () => {
+      if (!serviceForm.name || !serviceForm.price) return alert("Nome e preço obrigatórios");
+      
+      const newService: Service = {
+          id: editingServiceId || Date.now().toString(),
+          name: serviceForm.name,
+          price: Number(serviceForm.price),
+          duration: Number(serviceForm.duration) || 30,
+          description: serviceForm.description || ''
+      };
 
-  const renderClientStore = () => (
-      <div className="animate-fadeIn pb-24">
-          <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-slate-800">Loja</h2>
-              <div className="relative">
-                  <ShoppingBag className="text-rose-600" size={24} />
-                  {cart.length > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
-                          {cart.length}
-                      </span>
-                  )}
-              </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-               {products.map(product => {
-                    const countInCart = getCartCount(product.id);
-                    const isOutOfStock = product.stock <= 0;
-                    
-                    return (
-                        <div key={product.id} className={`bg-white border rounded-xl p-3 flex flex-col shadow-sm ${countInCart > 0 ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-100'} ${isOutOfStock ? 'opacity-60 grayscale' : ''}`}>
-                           <div className="h-32 bg-slate-100 rounded-lg mb-2 overflow-hidden relative">
-                              {product.photoUrl && <img src={product.photoUrl} className="w-full h-full object-cover" />}
-                              {isOutOfStock && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-bold uppercase">Esgotado</div>}
-                           </div>
-                           <h4 className="font-bold text-sm truncate">{product.name}</h4>
-                           <p className="text-xs text-slate-500 mt-1 line-clamp-2">{product.description}</p>
-                           <p className="text-sm font-bold text-slate-800 mt-2 mb-3">{settings.currency} {product.price}</p>
-                           
-                           {isOutOfStock ? (
-                               <button disabled className="mt-auto w-full py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed">
-                                   Indisponível
-                               </button>
-                           ) : (
-                               countInCart > 0 ? (
-                                   <div className="mt-auto flex items-center justify-between bg-rose-50 rounded-lg p-1.5">
-                                       <button onClick={() => handleRemoveOneFromCart(product.id)} className="p-1 text-rose-600 hover:bg-rose-200 rounded">
-                                           <Minus size={16} />
-                                       </button>
-                                       <span className="text-sm font-bold text-rose-700">{countInCart}</span>
-                                       <button onClick={() => handleAddToCart(product)} className="p-1 text-rose-600 hover:bg-rose-200 rounded">
-                                           <Plus size={16} />
-                                       </button>
-                                   </div>
-                               ) : (
-                                   <button 
-                                      onClick={() => handleAddToCart(product)}
-                                      className="mt-auto w-full py-2 rounded-lg text-xs font-bold bg-slate-900 text-white transition hover:bg-black"
-                                   >
-                                      Adicionar
-                                   </button>
-                               )
-                           )}
-                        </div>
-                    );
-                })}
-          </div>
+      const updatedServices = editingServiceId 
+          ? services.map(s => s.id === editingServiceId ? newService : s)
+          : [...services, newService];
+      
+      saveServices(updatedServices);
+      setIsEditingService(false);
+      setServiceForm({});
+      setEditingServiceId(null);
+  };
 
-          {cart.length > 0 && (
-             <div className="fixed bottom-20 left-4 right-4 z-40">
-                 <button 
-                    onClick={handleProductOrder}
-                    className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold shadow-xl shadow-rose-200/50 flex items-center justify-between px-6"
-                 >
-                    <span>Finalizar Pedido</span>
-                    <span className="bg-white/20 px-2 py-1 rounded text-sm">
-                        {settings.currency} {cart.reduce((acc, item) => acc + item.price, 0).toFixed(2)}
-                    </span>
-                 </button>
+  const handleDeleteService = (id: string) => {
+      if(window.confirm("Excluir serviço?")) {
+          saveServices(services.filter(s => s.id !== id));
+      }
+  };
+
+  // Products
+  const handleSaveProduct = () => {
+      if (!productForm.name || !productForm.price) return alert("Nome e preço obrigatórios");
+      
+      const newProduct: Product = {
+          id: editingProductId || Date.now().toString(),
+          name: productForm.name,
+          price: Number(productForm.price),
+          stock: Number(productForm.stock) || 0,
+          description: productForm.description || '',
+          photoUrl: productForm.photoUrl || ''
+      };
+
+      const updatedProducts = editingProductId
+          ? products.map(p => p.id === editingProductId ? newProduct : p)
+          : [...products, newProduct];
+      
+      saveProducts(updatedProducts);
+      setIsEditingProduct(false);
+      setProductForm({});
+      setEditingProductId(null);
+  };
+
+  const handleDeleteProduct = (id: string) => {
+       if(window.confirm("Excluir produto?")) {
+          saveProducts(products.filter(p => p.id !== id));
+      }
+  };
+
+  // Team
+  const handleSaveEmployee = () => {
+      if (!employeeForm.name) return alert("Nome obrigatório");
+      
+      const newEmployee: Employee = {
+          id: editingEmployeeId || Date.now().toString(),
+          name: employeeForm.name,
+          role: employeeForm.role || 'Profissional',
+          bio: employeeForm.bio || '',
+          photoUrl: employeeForm.photoUrl || ''
+      };
+
+      const updatedEmployees = editingEmployeeId
+          ? employees.map(e => e.id === editingEmployeeId ? newEmployee : e)
+          : [...employees, newEmployee];
+      
+      saveEmployees(updatedEmployees);
+      setIsEditingEmployee(false);
+      setEmployeeForm({});
+      setEditingEmployeeId(null);
+  };
+
+  const handleDeleteEmployee = (id: string) => {
+       if(window.confirm("Excluir profissional?")) {
+          saveEmployees(employees.filter(e => e.id !== id));
+      }
+  };
+
+  // Finance
+  const handleSaveTransaction = () => {
+      if (!transactionForm.title || !transactionForm.amount) return alert("Título e valor obrigatórios");
+      
+      const newTransaction: Transaction = {
+          id: Date.now().toString(),
+          title: transactionForm.title,
+          amount: Number(transactionForm.amount),
+          type: transactionForm.type || 'expense',
+          category: transactionForm.category || 'operational',
+          status: 'paid',
+          date: transactionForm.date || new Date().toISOString().split('T')[0]
+      };
+      
+      addTransaction(newTransaction);
+      setIsAddingTransaction(false);
+      setTransactionForm({ type: 'expense', date: new Date().toISOString().split('T')[0] });
+  };
+
+  // Settings
+  const handleSaveSettings = () => {
+      if (!settingsForm) return;
+      saveSettings(settingsForm);
+      setSalonName(settingsForm.shopName);
+      alert("Configurações salvas!");
+  };
+
+  // SaaS Plans
+  const handleAddFeature = () => {
+      if (!featureInput.trim()) return;
+      setPlanForm(prev => ({
+          ...prev,
+          features: [...(prev.features || []), featureInput.trim()]
+      }));
+      setFeatureInput('');
+  };
+
+  const handleRemoveFeature = (index: number) => {
+      setPlanForm(prev => ({
+          ...prev,
+          features: (prev.features || []).filter((_, i) => i !== index)
+      }));
+  };
+
+  const handleSavePlan = () => {
+      if (!planForm.name) return alert("Nome do plano é obrigatório");
+      if (planForm.price === undefined) return alert("Preço é obrigatório");
+
+      const newPlan: SaasPlan = {
+          id: editingPlanId || Date.now().toString(),
+          name: planForm.name,
+          price: Number(planForm.price),
+          features: planForm.features || [],
+          isRecommended: planForm.isRecommended || false
+      };
+
+      const updatedPlans = editingPlanId
+          ? saasPlans.map(p => p.id === editingPlanId ? newPlan : p)
+          : [...saasPlans, newPlan];
+      
+      saveSaasPlans(updatedPlans);
+      setIsEditingPlan(false);
+      setPlanForm({ features: [] });
+      setEditingPlanId(null);
+  };
+
+  const handleDeletePlan = (id: string) => {
+      if (window.confirm("Tem certeza que deseja excluir este plano?")) {
+          saveSaasPlans(saasPlans.filter(p => p.id !== id));
+      }
+  };
+
+  // --- RENDERERS ---
+
+  const renderDashboard = () => {
+    // Analytics
+    const totalAppointments = appointments.length;
+    const completedAppointments = appointments.filter(a => a.status === 'completed');
+    const totalRevenue = completedAppointments.reduce((acc, curr) => acc + curr.totalPrice, 0);
+
+    // Busiest Day
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const dayCounts = new Array(7).fill(0);
+    appointments.forEach(a => {
+        const day = new Date(a.date).getDay(); // Note: This depends on timezone handling in real apps
+        dayCounts[day]++;
+    });
+    const maxDayIndex = dayCounts.indexOf(Math.max(...dayCounts));
+    const busiestDay = maxDayIndex >= 0 ? days[maxDayIndex] : '-';
+
+    // Popular Service
+    const serviceCounts: Record<string, number> = {};
+    appointments.forEach(a => {
+        serviceCounts[a.serviceName] = (serviceCounts[a.serviceName] || 0) + 1;
+    });
+    const popularService = Object.keys(serviceCounts).sort((a,b) => serviceCounts[b] - serviceCounts[a])[0] || '-';
+
+    // Best Selling Product
+    const productCounts: Record<string, number> = {};
+    appointments.forEach(a => {
+        if(a.products) {
+            a.products.forEach(p => {
+                productCounts[p.name] = (productCounts[p.name] || 0) + 1;
+            });
+        }
+    });
+    const bestProduct = Object.keys(productCounts).sort((a,b) => productCounts[b] - productCounts[a])[0] || '-';
+
+
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center px-2">
+                <div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Gestão</p>
+                    <h2 className="text-xl font-black text-slate-800">{salonName}</h2>
+                </div>
+                <button onClick={handleAdminLogout} className="text-xs font-bold text-rose-600 bg-rose-50 px-4 py-2 rounded-full hover:bg-rose-100 transition-colors">
+                    Sair
+                </button>
              </div>
+
+             {/* Stats Cards */}
+             <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-100">
+                     <p className="text-xs text-slate-400 font-bold uppercase mb-1">Faturamento</p>
+                     <p className="text-2xl font-black text-emerald-600">R$ {totalRevenue}</p>
+                 </div>
+                 <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-100">
+                     <p className="text-xs text-slate-400 font-bold uppercase mb-1">Agendamentos</p>
+                     <p className="text-2xl font-black text-slate-800">{totalAppointments}</p>
+                 </div>
+             </div>
+
+             {/* Insights */}
+             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                     <Zap size={18} className="text-yellow-500 fill-yellow-500" /> Insights do Salão
+                 </h3>
+                 
+                 <div className="space-y-3">
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl">
+                         <div className="flex items-center gap-3">
+                             <div className="bg-white p-2 rounded-full text-rose-500"><Calendar size={16} /></div>
+                             <span className="text-sm font-medium text-slate-600">Dia Mais Movimentado</span>
+                         </div>
+                         <span className="font-bold text-slate-800">{busiestDay}</span>
+                     </div>
+
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl">
+                         <div className="flex items-center gap-3">
+                             <div className="bg-white p-2 rounded-full text-purple-500"><Scissors size={16} /></div>
+                             <span className="text-sm font-medium text-slate-600">Serviço Top 1</span>
+                         </div>
+                         <span className="font-bold text-slate-800 text-sm max-w-[120px] truncate">{popularService}</span>
+                     </div>
+
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl">
+                         <div className="flex items-center gap-3">
+                             <div className="bg-white p-2 rounded-full text-emerald-500"><ShoppingBag size={16} /></div>
+                             <span className="text-sm font-medium text-slate-600">Produto Top 1</span>
+                         </div>
+                         <span className="font-bold text-slate-800 text-sm max-w-[120px] truncate">{bestProduct}</span>
+                     </div>
+                 </div>
+
+                 {/* Sugestão IA Mock */}
+                 <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 rounded-2xl border border-indigo-100 mt-2">
+                     <p className="text-xs text-indigo-800 leading-relaxed">
+                         <span className="font-bold">Dica:</span> Seu dia mais fraco é Terça-feira. Que tal criar uma promoção "Terça dos Cortes" com 15% de desconto para aumentar o movimento?
+                     </p>
+                 </div>
+             </div>
+
+             {/* Recent Pending Appointments */}
+             <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Próximos Clientes</h3>
+                {appointments.filter(a => a.status === 'scheduled').length > 0 ? (
+                    <div className="space-y-3">
+                        {appointments.filter(a => a.status === 'scheduled').slice(0, 3).map(app => (
+                            <div key={app.id} className="flex flex-col gap-3 p-4 bg-slate-50 rounded-2xl">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center font-bold">
+                                            {app.clientName?.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-800 text-sm">{app.clientName}</p>
+                                            <p className="text-xs text-slate-400">{app.serviceName} • {app.time}</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => openCheckoutModal(app)}
+                                        className="bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 hover:bg-emerald-600 transition-colors shadow-sm"
+                                    >
+                                        <Check size={14} /> Atender
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                         <button onClick={() => setView(ViewState.DASHBOARD)} className="w-full text-center text-xs font-bold text-slate-400 mt-2">Ver Todos</button>
+                    </div>
+                ) : (
+                    <p className="text-center text-slate-400 text-sm py-4">Agenda livre por enquanto.</p>
+                )}
+             </div>
+        </div>
+    );
+  };
+
+  const renderServices = () => (
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center px-2">
+              <h2 className="text-xl font-black text-slate-800">Serviços</h2>
+              <button 
+                  onClick={() => {
+                      setServiceForm({});
+                      setEditingServiceId(null);
+                      setIsEditingService(true);
+                  }}
+                  className="bg-slate-900 text-white p-3 rounded-full hover:bg-rose-600 transition-colors shadow-lg shadow-slate-200"
+              >
+                  <Plus size={20} />
+              </button>
+          </div>
+
+          {isEditingService ? (
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+                  <h3 className="font-bold text-slate-800">{editingServiceId ? 'Editar Serviço' : 'Novo Serviço'}</h3>
+                  <input 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                      placeholder="Nome do Serviço (ex: Corte)" 
+                      value={serviceForm.name || ''}
+                      onChange={e => setServiceForm({...serviceForm, name: e.target.value})}
+                  />
+                  <div className="flex gap-4">
+                       <input 
+                          type="number"
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                          placeholder="Preço (R$)" 
+                          value={serviceForm.price || ''}
+                          onChange={e => setServiceForm({...serviceForm, price: Number(e.target.value)})}
+                      />
+                       <input 
+                          type="number"
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                          placeholder="Duração (min)" 
+                          value={serviceForm.duration || ''}
+                          onChange={e => setServiceForm({...serviceForm, duration: Number(e.target.value)})}
+                      />
+                  </div>
+                  <textarea 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium text-sm" 
+                      placeholder="Descrição breve" 
+                      value={serviceForm.description || ''}
+                      onChange={e => setServiceForm({...serviceForm, description: e.target.value})}
+                      rows={3}
+                  />
+                  <div className="flex gap-3">
+                      <button onClick={() => setIsEditingService(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancelar</button>
+                      <button onClick={handleSaveService} className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-bold">Salvar</button>
+                  </div>
+              </div>
+          ) : (
+              <div className="space-y-3">
+                  {services.map(service => (
+                      <div key={service.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
+                          <div>
+                              <h4 className="font-bold text-slate-800">{service.name}</h4>
+                              <p className="text-xs text-slate-400">{service.duration} min • R$ {service.price}</p>
+                          </div>
+                          <div className="flex gap-2">
+                              <button 
+                                  onClick={() => {
+                                      setServiceForm(service);
+                                      setEditingServiceId(service.id);
+                                      setIsEditingService(true);
+                                  }}
+                                  className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100"
+                              >
+                                  <Edit2 size={16} />
+                              </button>
+                              <button 
+                                  onClick={() => handleDeleteService(service.id)}
+                                  className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+                  {services.length === 0 && <p className="text-center text-slate-400 py-8">Nenhum serviço cadastrado.</p>}
+              </div>
           )}
       </div>
   );
 
-  const renderServiceForm = () => (
-    <form onSubmit={handleSaveService} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Nome do Serviço</label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-            value={(editingItem as Service)?.name || ''}
-            onChange={e => setEditingItem({ ...(editingItem as Service), name: e.target.value })}
-            required
-          />
-          <button
-            type="button"
-            onClick={handleGenerateDescription}
-            disabled={isLoadingAI}
-            className="mt-1 bg-purple-100 text-purple-600 p-2 rounded-md hover:bg-purple-200 transition"
-            title="Gerar descrição com IA"
-          >
-            {isLoadingAI ? <Wand2 className="animate-spin" size={20} /> : <Wand2 size={20} />}
-          </button>
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Preço</label>
-        <input
-          type="number"
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Service)?.price || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Service), price: parseFloat(e.target.value) })}
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Duração (min)</label>
-        <input
-          type="number"
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Service)?.duration || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Service), duration: parseFloat(e.target.value) })}
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Descrição</label>
-        <textarea
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Service)?.description || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Service), description: e.target.value })}
-          rows={3}
-        />
-      </div>
-      <button type="submit" className="w-full bg-rose-600 text-white py-2 px-4 rounded-md hover:bg-rose-700 transition font-bold">
-        Salvar Serviço
-      </button>
-    </form>
-  );
-
-  const renderProductForm = () => (
-    <form onSubmit={handleSaveProduct} className="space-y-4">
-       <div className="flex justify-center mb-4">
-        <div className="relative w-24 h-24 bg-slate-100 rounded-xl overflow-hidden group cursor-pointer border-2 border-dashed border-slate-300 hover:border-rose-500 transition">
-           {(editingItem as Product)?.photoUrl ? (
-             <img src={(editingItem as Product).photoUrl} alt="Preview" className="w-full h-full object-cover" />
-           ) : (
-             <div className="flex flex-col items-center justify-center h-full text-slate-400">
-               <ImageIcon size={24} />
-               <span className="text-[10px] mt-1">Foto</span>
-             </div>
-           )}
-           <input type="file" accept="image/*" onChange={handlePhotoUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Nome do Produto</label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-            value={(editingItem as Product)?.name || ''}
-            onChange={e => setEditingItem({ ...(editingItem as Product), name: e.target.value })}
-            required
-          />
-          <button
-            type="button"
-            onClick={handleGenerateDescription}
-            disabled={isLoadingAI}
-            className="mt-1 bg-purple-100 text-purple-600 p-2 rounded-md hover:bg-purple-200 transition"
-          >
-            {isLoadingAI ? <Wand2 className="animate-spin" size={20} /> : <Wand2 size={20} />}
-          </button>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700">Preço</label>
-          <input
-            type="number"
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-            value={(editingItem as Product)?.price || ''}
-            onChange={e => setEditingItem({ ...(editingItem as Product), price: parseFloat(e.target.value) })}
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700">Estoque</label>
-          <input
-            type="number"
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-            value={(editingItem as Product)?.stock || ''}
-            onChange={e => setEditingItem({ ...(editingItem as Product), stock: parseFloat(e.target.value) })}
-            required
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Descrição</label>
-        <textarea
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Product)?.description || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Product), description: e.target.value })}
-          rows={2}
-        />
-      </div>
-      <button type="submit" className="w-full bg-rose-600 text-white py-2 px-4 rounded-md hover:bg-rose-700 transition font-bold">
-        Salvar Produto
-      </button>
-    </form>
-  );
-
-  const renderEmployeeForm = () => (
-    <form onSubmit={handleSaveEmployee} className="space-y-4">
-      <div className="flex justify-center mb-4">
-        <div className="relative w-24 h-24 bg-slate-100 rounded-full overflow-hidden group cursor-pointer border-2 border-dashed border-slate-300 hover:border-rose-500 transition">
-           {(editingItem as Employee)?.photoUrl ? (
-             <img src={(editingItem as Employee).photoUrl} alt="Preview" className="w-full h-full object-cover" />
-           ) : (
-             <div className="flex flex-col items-center justify-center h-full text-slate-400">
-               <User size={32} />
-             </div>
-           )}
-           <input type="file" accept="image/*" onChange={handlePhotoUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Nome</label>
-         <div className="flex gap-2">
-          <input
-            type="text"
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-            value={(editingItem as Employee)?.name || ''}
-            onChange={e => setEditingItem({ ...(editingItem as Employee), name: e.target.value })}
-            required
-          />
-           <button
-            type="button"
-            onClick={handleGenerateDescription}
-            disabled={isLoadingAI}
-            className="mt-1 bg-purple-100 text-purple-600 p-2 rounded-md hover:bg-purple-200 transition"
-          >
-            {isLoadingAI ? <Wand2 className="animate-spin" size={20} /> : <Wand2 size={20} />}
-          </button>
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Cargo</label>
-        <input
-          type="text"
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Employee)?.role || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Employee), role: e.target.value })}
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700">Bio</label>
-        <textarea
-          className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border"
-          value={(editingItem as Employee)?.bio || ''}
-          onChange={e => setEditingItem({ ...(editingItem as Employee), bio: e.target.value })}
-          rows={3}
-        />
-      </div>
-      <button type="submit" className="w-full bg-rose-600 text-white py-2 px-4 rounded-md hover:bg-rose-700 transition font-bold">
-        Salvar Profissional
-      </button>
-    </form>
-  );
-
-  const renderClientAuth = () => (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 animate-fadeIn">
-          <button onClick={() => { setIsBookingMode(false); setShowLandingPage(true); }} className="absolute top-4 left-4 p-2 bg-white rounded-full text-slate-600 shadow-sm">
-              <ChevronLeft size={24} />
-          </button>
-          <div className="w-full max-w-sm bg-white p-8 rounded-3xl shadow-lg border border-slate-100">
-              <div className="text-center mb-6">
-                  <h2 className="text-2xl font-bold text-slate-800">{authMode === 'login' ? 'Bem-vindo de volta' : 'Criar Conta'}</h2>
-                  <p className="text-slate-500 text-sm">Identifique-se para continuar</p>
-              </div>
-
-              <form onSubmit={handleAuthSubmit} className="space-y-4">
-                  {authMode === 'register' && (
-                      <input 
-                          type="text" 
-                          placeholder="Seu Nome" 
-                          required
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:outline-none"
-                          value={authForm.name}
-                          onChange={e => setAuthForm({...authForm, name: e.target.value})}
-                      />
-                  )}
-                  <div className="relative">
-                      <Phone className="absolute left-3 top-3.5 text-slate-400" size={18} />
-                      <input 
-                          type="tel" 
-                          placeholder="WhatsApp / Telefone" 
-                          required
-                          className="w-full pl-10 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:outline-none"
-                          value={authForm.phone}
-                          onChange={e => setAuthForm({...authForm, phone: e.target.value})}
-                      />
-                  </div>
-                  
-                  {authMode === 'register' && (
-                       <input 
-                          type="date" 
-                          placeholder="Data Nascimento" 
-                          required
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:outline-none text-slate-500"
-                          value={authForm.birthDate}
-                          onChange={e => setAuthForm({...authForm, birthDate: e.target.value})}
-                      />
-                  )}
-
-                  <div className="relative">
-                       <Lock className="absolute left-3 top-3.5 text-slate-400" size={18} />
-                       <input 
-                          type="password" 
-                          placeholder={authMode === 'login' ? "Senha (se tiver)" : "Senha (Opcional)"} 
-                          className="w-full pl-10 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-rose-500 focus:outline-none"
-                          value={authForm.password}
-                          onChange={e => setAuthForm({...authForm, password: e.target.value})}
-                      />
-                  </div>
-                  
-                  <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition">
-                      {authMode === 'login' ? 'Entrar' : 'Cadastrar'}
-                  </button>
-              </form>
-
-              <div className="mt-6 text-center text-sm">
-                  {authMode === 'login' ? (
-                      <p className="text-slate-500">Não tem conta? <button onClick={() => setAuthMode('register')} className="text-rose-600 font-bold hover:underline">Cadastre-se</button></p>
-                  ) : (
-                      <p className="text-slate-500">Já tem conta? <button onClick={() => setAuthMode('login')} className="text-rose-600 font-bold hover:underline">Entrar</button></p>
-                  )}
-              </div>
-          </div>
-      </div>
-  );
-
-  const renderSaasPlans = () => (
-      <div className="space-y-6 animate-fadeIn">
-          <div className="flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <Ticket size={24} className="text-rose-600"/> Gestão de Planos
-              </h3>
-              <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2">
-                  <Plus size={16} /> Novo Plano
+  const renderProducts = () => (
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center px-2">
+              <h2 className="text-xl font-black text-slate-800">Loja & Estoque</h2>
+               <button 
+                  onClick={() => {
+                      setProductForm({});
+                      setEditingProductId(null);
+                      setIsEditingProduct(true);
+                  }}
+                  className="bg-slate-900 text-white p-3 rounded-full hover:bg-rose-600 transition-colors shadow-lg shadow-slate-200"
+              >
+                  <Plus size={20} />
               </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {saasPlans.map(plan => (
-                  <div key={plan.id} className={`bg-white p-6 rounded-2xl border ${plan.isRecommended ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-100'} shadow-sm relative`}>
-                      {plan.isRecommended && <span className="absolute top-4 right-4 text-[10px] font-bold uppercase bg-rose-100 text-rose-600 px-2 py-1 rounded">Recomendado</span>}
-                      <h4 className="text-lg font-bold text-slate-800">{plan.name}</h4>
-                      <p className="text-3xl font-bold text-slate-900 mt-2">R$ {plan.price}<span className="text-sm text-slate-400 font-normal">/mês</span></p>
-                      
-                      <ul className="mt-4 space-y-2 mb-6">
-                          {plan.features.map((feature, i) => (
-                              <li key={i} className="text-sm text-slate-600 flex items-center gap-2">
-                                  <CheckCircle2 size={14} className="text-green-500" /> {feature}
-                              </li>
-                          ))}
-                      </ul>
+          {isEditingProduct ? (
+               <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+                  <h3 className="font-bold text-slate-800">{editingProductId ? 'Editar Produto' : 'Novo Produto'}</h3>
+                  <input 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                      placeholder="Nome do Produto" 
+                      value={productForm.name || ''}
+                      onChange={e => setProductForm({...productForm, name: e.target.value})}
+                  />
+                  <div className="flex gap-4">
+                       <input 
+                          type="number"
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                          placeholder="Preço (R$)" 
+                          value={productForm.price || ''}
+                          onChange={e => setProductForm({...productForm, price: Number(e.target.value)})}
+                      />
+                       <input 
+                          type="number"
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                          placeholder="Estoque" 
+                          value={productForm.stock || ''}
+                          onChange={e => setProductForm({...productForm, stock: Number(e.target.value)})}
+                      />
+                  </div>
 
-                      <div className="flex gap-2">
-                           <button onClick={() => { setEditingItem({...plan, features: plan.features.join(', ')} as any); setIsModalOpen(true); }} className="flex-1 py-2 rounded-lg bg-slate-50 text-slate-600 font-bold hover:bg-slate-100 flex items-center justify-center gap-1">
-                               <Pencil size={14} /> Editar
-                           </button>
-                           <button onClick={() => handleDelete(plan.id, 'plan')} className="py-2 px-3 rounded-lg bg-red-50 text-red-500 font-bold hover:bg-red-100">
-                               <Trash2 size={14} />
-                           </button>
+                  {/* Image Upload for Product */}
+                  <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase ml-1">Foto do Produto</label>
+                      <div className="flex items-center gap-4">
+                          <div className="w-20 h-20 bg-slate-100 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-200 shrink-0 relative">
+                              {productForm.photoUrl ? (
+                                  <>
+                                      <img src={productForm.photoUrl} className="w-full h-full object-cover" />
+                                      <button 
+                                          onClick={() => setProductForm({...productForm, photoUrl: ''})}
+                                          className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity"
+                                      >
+                                          <Trash2 size={16} />
+                                      </button>
+                                  </>
+                              ) : (
+                                  <Package className="text-slate-300" />
+                              )}
+                          </div>
+                          <div className="flex-1">
+                              <label className="flex items-center justify-center gap-2 w-full p-3 bg-slate-50 text-slate-600 rounded-2xl font-bold text-sm cursor-pointer hover:bg-slate-100 transition-colors">
+                                  <Camera size={18} />
+                                  <span>Escolher Imagem</span>
+                                  <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      className="hidden" 
+                                      onChange={(e) => handleImageUpload(e, (url) => setProductForm({...productForm, photoUrl: url}))} 
+                                  />
+                              </label>
+                          </div>
                       </div>
                   </div>
-              ))}
+
+                  <textarea 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium text-sm" 
+                      placeholder="Descrição" 
+                      value={productForm.description || ''}
+                      onChange={e => setProductForm({...productForm, description: e.target.value})}
+                      rows={2}
+                  />
+                  <div className="flex gap-3">
+                      <button onClick={() => setIsEditingProduct(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancelar</button>
+                      <button onClick={handleSaveProduct} className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-bold">Salvar</button>
+                  </div>
+              </div>
+          ) : (
+              <div className="grid grid-cols-2 gap-4">
+                  {products.map(product => (
+                      <div key={product.id} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                          <div className="h-24 bg-slate-100 rounded-xl mb-3 overflow-hidden relative">
+                              {product.photoUrl ? (
+                                  <img src={product.photoUrl} className="w-full h-full object-cover" />
+                              ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-300"><Package /></div>
+                              )}
+                              <div className="absolute top-1 right-1 bg-white/90 px-2 py-0.5 rounded-md text-[10px] font-bold text-slate-800 shadow-sm">
+                                  Qtd: {product.stock}
+                              </div>
+                          </div>
+                          <h4 className="font-bold text-slate-800 text-sm truncate">{product.name}</h4>
+                          <p className="text-xs text-rose-500 font-bold mb-3">R$ {product.price}</p>
+                          <div className="flex gap-2 mt-auto">
+                              <button 
+                                  onClick={() => {
+                                      setProductForm(product);
+                                      setEditingProductId(product.id);
+                                      setIsEditingProduct(true);
+                                  }}
+                                  className="flex-1 p-2 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 flex justify-center"
+                              >
+                                  <Edit2 size={14} />
+                              </button>
+                              <button 
+                                  onClick={() => handleDeleteProduct(product.id)}
+                                  className="flex-1 p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 flex justify-center"
+                              >
+                                  <Trash2 size={14} />
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+                   {products.length === 0 && <div className="col-span-2 text-center text-slate-400 py-8">Nenhum produto cadastrado.</div>}
+              </div>
+          )}
+      </div>
+  );
+
+  const renderTeam = () => (
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center px-2">
+              <h2 className="text-xl font-black text-slate-800">Equipe</h2>
+              <button 
+                  onClick={() => {
+                      setEmployeeForm({});
+                      setEditingEmployeeId(null);
+                      setIsEditingEmployee(true);
+                  }}
+                  className="bg-slate-900 text-white p-3 rounded-full hover:bg-rose-600 transition-colors shadow-lg shadow-slate-200"
+              >
+                  <Plus size={20} />
+              </button>
           </div>
-          <button onClick={() => setView(ViewState.SAAS_ADMIN)} className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-800">
-              <ArrowLeft size={16} /> Voltar ao Dashboard
-          </button>
+
+           {isEditingEmployee ? (
+               <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+                  <h3 className="font-bold text-slate-800">{editingEmployeeId ? 'Editar Profissional' : 'Novo Profissional'}</h3>
+                  <input 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                      placeholder="Nome Completo" 
+                      value={employeeForm.name || ''}
+                      onChange={e => setEmployeeForm({...employeeForm, name: e.target.value})}
+                  />
+                  <input 
+                      className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                      placeholder="Cargo / Especialidade" 
+                      value={employeeForm.role || ''}
+                      onChange={e => setEmployeeForm({...employeeForm, role: e.target.value})}
+                  />
+                  
+                  {/* Image Upload for Employee */}
+                  <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase ml-1">Foto do Perfil</label>
+                      <div className="flex items-center gap-4">
+                          <div className="w-20 h-20 bg-slate-100 rounded-full overflow-hidden flex items-center justify-center border border-slate-200 shrink-0 relative">
+                              {employeeForm.photoUrl ? (
+                                  <>
+                                      <img src={employeeForm.photoUrl} className="w-full h-full object-cover" />
+                                      <button 
+                                          onClick={() => setEmployeeForm({...employeeForm, photoUrl: ''})}
+                                          className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity"
+                                      >
+                                          <Trash2 size={16} />
+                                      </button>
+                                  </>
+                              ) : (
+                                  <User className="text-slate-300" />
+                              )}
+                          </div>
+                          <div className="flex-1">
+                              <label className="flex items-center justify-center gap-2 w-full p-3 bg-slate-50 text-slate-600 rounded-2xl font-bold text-sm cursor-pointer hover:bg-slate-100 transition-colors">
+                                  <Camera size={18} />
+                                  <span>Escolher Imagem</span>
+                                  <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      className="hidden" 
+                                      onChange={(e) => handleImageUpload(e, (url) => setEmployeeForm({...employeeForm, photoUrl: url}))} 
+                                  />
+                              </label>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                      <button onClick={() => setIsEditingEmployee(false)} className="flex-1 py-3 text-slate-400 font-bold">Cancelar</button>
+                      <button onClick={handleSaveEmployee} className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-bold">Salvar</button>
+                  </div>
+              </div>
+           ) : (
+               <div className="space-y-3">
+                   {employees.map(employee => (
+                       <div key={employee.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+                           <div className="w-14 h-14 rounded-full bg-slate-100 overflow-hidden shrink-0">
+                               {employee.photoUrl ? (
+                                   <img src={employee.photoUrl} className="w-full h-full object-cover" />
+                               ) : (
+                                   <Users className="w-full h-full p-3 text-slate-300" />
+                               )}
+                           </div>
+                           <div className="flex-1">
+                               <h4 className="font-bold text-slate-800">{employee.name}</h4>
+                               <p className="text-xs text-slate-400">{employee.role}</p>
+                           </div>
+                           <div className="flex gap-2">
+                               <button 
+                                  onClick={() => {
+                                      setEmployeeForm(employee);
+                                      setEditingEmployeeId(employee.id);
+                                      setIsEditingEmployee(true);
+                                  }}
+                                  className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100"
+                              >
+                                  <Edit2 size={16} />
+                              </button>
+                              <button 
+                                  onClick={() => handleDeleteEmployee(employee.id)}
+                                  className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
+                           </div>
+                       </div>
+                   ))}
+               </div>
+           )}
+      </div>
+  );
+
+  const renderFinance = () => {
+      const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+      const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+      const balance = totalIncome - totalExpense;
+
+      return (
+        <div className="space-y-6 animate-fade-in pb-20">
+             <div className="flex justify-between items-center px-2">
+                <h2 className="text-xl font-black text-slate-800">Financeiro</h2>
+                <button 
+                    onClick={() => setIsAddingTransaction(!isAddingTransaction)}
+                    className="bg-slate-900 text-white p-3 rounded-full hover:bg-rose-600 transition-colors shadow-lg shadow-slate-200"
+                >
+                    {isAddingTransaction ? <X size={20} /> : <Plus size={20} />}
+                </button>
+             </div>
+
+             {isAddingTransaction && (
+                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-4 animate-scale-in">
+                     <h3 className="font-bold text-slate-800">Nova Transação</h3>
+                     
+                     <div className="flex bg-slate-50 p-1 rounded-xl">
+                         <button 
+                            onClick={() => setTransactionForm({...transactionForm, type: 'income'})}
+                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${transactionForm.type === 'income' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}
+                         >
+                             Receita
+                         </button>
+                         <button 
+                            onClick={() => setTransactionForm({...transactionForm, type: 'expense'})}
+                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${transactionForm.type === 'expense' ? 'bg-white shadow-sm text-red-500' : 'text-slate-400'}`}
+                         >
+                             Despesa
+                         </button>
+                     </div>
+
+                     <input 
+                        className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                        placeholder="Descrição (ex: Conta de Luz)" 
+                        value={transactionForm.title || ''}
+                        onChange={e => setTransactionForm({...transactionForm, title: e.target.value})}
+                     />
+                     <div className="flex gap-4">
+                        <input 
+                            type="number"
+                            className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                            placeholder="Valor (R$)" 
+                            value={transactionForm.amount || ''}
+                            onChange={e => setTransactionForm({...transactionForm, amount: Number(e.target.value)})}
+                        />
+                        <input 
+                            type="date"
+                            className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                            value={transactionForm.date}
+                            onChange={e => setTransactionForm({...transactionForm, date: e.target.value})}
+                        />
+                     </div>
+                     <button onClick={handleSaveTransaction} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold">Adicionar</button>
+                 </div>
+             )}
+
+             {/* Balance Cards - White Theme */}
+             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                 <p className="text-slate-400 text-xs font-bold uppercase mb-1">Saldo Atual</p>
+                 <p className={`text-4xl font-black mb-8 ${balance >= 0 ? 'text-slate-800' : 'text-red-500'}`}>R$ {balance.toFixed(2)}</p>
+                 <div className="flex gap-8">
+                     <div>
+                         <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold mb-1 bg-emerald-50 px-2 py-1 rounded-md w-fit">
+                             <TrendingUp size={12} /> Entradas
+                         </div>
+                         <p className="text-xl font-bold text-slate-800">R$ {totalIncome.toFixed(2)}</p>
+                     </div>
+                     <div>
+                         <div className="flex items-center gap-1.5 text-red-500 text-xs font-bold mb-1 bg-red-50 px-2 py-1 rounded-md w-fit">
+                             <TrendingDown size={12} /> Saídas
+                         </div>
+                         <p className="text-xl font-bold text-slate-800">R$ {totalExpense.toFixed(2)}</p>
+                     </div>
+                 </div>
+             </div>
+
+             {/* Transaction List */}
+             <div>
+                 <h3 className="font-bold text-slate-800 mb-4 px-2">Extrato</h3>
+                 <div className="space-y-3">
+                     {transactions.slice().reverse().map(t => (
+                         <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
+                             <div className="flex items-center gap-3">
+                                 <div className={`p-2 rounded-full ${t.type === 'income' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
+                                     {t.type === 'income' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                                 </div>
+                                 <div>
+                                     <h4 className="font-bold text-slate-800 text-sm">{t.title}</h4>
+                                     <p className="text-xs text-slate-400">{t.date.split('-').reverse().join('/')}</p>
+                                 </div>
+                             </div>
+                             <span className={`font-bold text-sm ${t.type === 'income' ? 'text-emerald-600' : 'text-red-500'}`}>
+                                 {t.type === 'income' ? '+' : '-'} R$ {t.amount}
+                             </span>
+                         </div>
+                     ))}
+                     {transactions.length === 0 && <p className="text-center text-slate-400 py-4">Nenhuma movimentação.</p>}
+                 </div>
+             </div>
+        </div>
+      );
+  };
+
+  const renderSettings = () => (
+      <div className="space-y-6 animate-fade-in pb-20">
+          <div className="flex justify-between items-center px-2">
+              <h2 className="text-xl font-black text-slate-800">Ajustes</h2>
+          </div>
+
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-6">
+              <div className="space-y-4">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Store size={18} /> Dados do Salão
+                  </h3>
+                  <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase ml-1">Nome do Salão</label>
+                      <input 
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium mt-1" 
+                          value={settingsForm?.shopName || ''}
+                          onChange={e => setSettingsForm(prev => prev ? {...prev, shopName: e.target.value} : null)}
+                      />
+                  </div>
+                  <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase ml-1">Endereço</label>
+                      <input 
+                          className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium mt-1" 
+                          value={settingsForm?.address || ''}
+                          onChange={e => setSettingsForm(prev => prev ? {...prev, address: e.target.value} : null)}
+                      />
+                  </div>
+              </div>
+
+              <div className="space-y-4">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Clock size={18} /> Horários
+                  </h3>
+                  <div className="flex gap-4">
+                      <div className="flex-1">
+                          <label className="text-xs font-bold text-slate-400 uppercase ml-1">Abertura</label>
+                          <input 
+                              type="time"
+                              className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium mt-1" 
+                              value={settingsForm?.openTime || ''}
+                              onChange={e => setSettingsForm(prev => prev ? {...prev, openTime: e.target.value} : null)}
+                          />
+                      </div>
+                      <div className="flex-1">
+                          <label className="text-xs font-bold text-slate-400 uppercase ml-1">Fechamento</label>
+                          <input 
+                              type="time"
+                              className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium mt-1" 
+                              value={settingsForm?.closeTime || ''}
+                              onChange={e => setSettingsForm(prev => prev ? {...prev, closeTime: e.target.value} : null)}
+                          />
+                      </div>
+                  </div>
+              </div>
+              
+              <button 
+                  onClick={handleSaveSettings}
+                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
+              >
+                  <Save size={18} /> Salvar Alterações
+              </button>
+          </div>
+      </div>
+  );
+
+  const renderSaaSPlans = () => (
+      <div className="space-y-8 animate-fade-in p-6 max-w-6xl mx-auto bg-slate-50 min-h-screen">
+          <header className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-4">
+                   <button onClick={() => setView(ViewState.SAAS_ADMIN)} className="p-2 bg-white rounded-full text-slate-500 hover:text-slate-800 shadow-sm border border-slate-100">
+                       <ArrowLeft size={20} />
+                   </button>
+                   <div>
+                       <h1 className="text-3xl font-black text-slate-900">Planos de Assinatura</h1>
+                       <p className="text-slate-500">Configure as ofertas da Landing Page</p>
+                   </div>
+              </div>
+              {!isEditingPlan && (
+                  <button 
+                      onClick={() => {
+                          setPlanForm({ features: [] });
+                          setEditingPlanId(null);
+                          setIsEditingPlan(true);
+                      }}
+                      className="bg-slate-900 text-white px-5 py-3 rounded-full font-bold flex items-center gap-2 hover:bg-slate-800"
+                  >
+                      <Plus size={20} /> Novo Plano
+                  </button>
+              )}
+          </header>
+
+          {isEditingPlan ? (
+               <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 max-w-2xl mx-auto">
+                   <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                       {editingPlanId ? <Edit2 size={24} className="text-slate-400" /> : <Tag size={24} className="text-slate-400" />}
+                       {editingPlanId ? 'Editar Plano' : 'Criar Novo Plano'}
+                   </h3>
+
+                   <div className="space-y-6">
+                       <div className="grid grid-cols-2 gap-4">
+                           <div>
+                               <label className="text-xs font-bold text-slate-400 uppercase ml-1 mb-1 block">Nome do Plano</label>
+                               <input 
+                                  className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                                  placeholder="Ex: Start, Pro..." 
+                                  value={planForm.name || ''}
+                                  onChange={e => setPlanForm({...planForm, name: e.target.value})}
+                               />
+                           </div>
+                           <div>
+                               <label className="text-xs font-bold text-slate-400 uppercase ml-1 mb-1 block">Preço (R$)</label>
+                               <input 
+                                  type="number"
+                                  className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium" 
+                                  placeholder="0.00" 
+                                  value={planForm.price ?? ''}
+                                  onChange={e => setPlanForm({...planForm, price: Number(e.target.value)})}
+                               />
+                           </div>
+                       </div>
+
+                       <div>
+                           <label className="text-xs font-bold text-slate-400 uppercase ml-1 mb-1 block">Características (Features)</label>
+                           <div className="flex gap-2 mb-3">
+                               <input 
+                                  className="flex-1 p-3 bg-slate-50 rounded-xl border-none text-sm" 
+                                  placeholder="Adicionar benefício (ex: Agenda Ilimitada)"
+                                  value={featureInput}
+                                  onChange={e => setFeatureInput(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleAddFeature()}
+                               />
+                               <button onClick={handleAddFeature} className="bg-slate-200 text-slate-600 p-3 rounded-xl font-bold hover:bg-slate-300">
+                                   <Plus size={20} />
+                               </button>
+                           </div>
+                           <div className="space-y-2">
+                               {planForm.features?.map((feature, idx) => (
+                                   <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                       <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                           <CheckCircle2 size={16} className="text-emerald-500" /> {feature}
+                                       </span>
+                                       <button onClick={() => handleRemoveFeature(idx)} className="text-slate-400 hover:text-red-500">
+                                           <X size={16} />
+                                       </button>
+                                   </div>
+                               ))}
+                               {(!planForm.features || planForm.features.length === 0) && (
+                                   <p className="text-xs text-slate-400 text-center py-2">Nenhum benefício adicionado.</p>
+                               )}
+                           </div>
+                       </div>
+
+                       <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer" onClick={() => setPlanForm({...planForm, isRecommended: !planForm.isRecommended})}>
+                           <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${planForm.isRecommended ? 'bg-rose-500 border-rose-500 text-white' : 'border-slate-300 bg-white'}`}>
+                               {planForm.isRecommended && <Check size={16} />}
+                           </div>
+                           <span className="font-bold text-slate-700 text-sm">Destacar como "Mais Escolhido"</span>
+                       </div>
+
+                       <div className="flex gap-3 pt-4">
+                           <button onClick={() => setIsEditingPlan(false)} className="flex-1 py-4 text-slate-400 font-bold hover:bg-slate-100 rounded-2xl">Cancelar</button>
+                           <button onClick={handleSavePlan} className="flex-1 bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 shadow-lg shadow-emerald-200">
+                               Salvar Plano
+                           </button>
+                       </div>
+                   </div>
+               </div>
+          ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {saasPlans.map(plan => (
+                      <div key={plan.id} className={`bg-white rounded-[2rem] p-8 shadow-sm border relative flex flex-col ${plan.isRecommended ? 'border-rose-500 shadow-xl shadow-rose-100' : 'border-slate-100'}`}>
+                          {plan.isRecommended && (
+                              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md">
+                                  Recomendado
+                              </div>
+                          )}
+                          
+                          <div className="text-center mb-6">
+                              <h3 className="font-bold text-slate-800 text-lg mb-2">{plan.name}</h3>
+                              <div className="text-4xl font-black text-slate-900">
+                                  R$ {plan.price}<span className="text-lg font-medium text-slate-400">/mês</span>
+                              </div>
+                          </div>
+                          
+                          <ul className="space-y-4 mb-8 flex-1">
+                              {plan.features.map((feature, idx) => (
+                                  <li key={idx} className="flex items-center gap-3 text-sm text-slate-600">
+                                      <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                                      {feature}
+                                  </li>
+                              ))}
+                          </ul>
+
+                          <div className="flex gap-3 mt-auto pt-6 border-t border-slate-50">
+                               <button 
+                                  onClick={() => {
+                                      setPlanForm(plan);
+                                      setEditingPlanId(plan.id);
+                                      setIsEditingPlan(true);
+                                  }}
+                                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-slate-50 text-slate-700 rounded-xl font-bold hover:bg-slate-100"
+                               >
+                                   <Edit2 size={16} /> Editar
+                               </button>
+                               <button 
+                                  onClick={() => handleDeletePlan(plan.id)}
+                                  className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100"
+                               >
+                                   <Trash2 size={20} />
+                               </button>
+                          </div>
+                      </div>
+                  ))}
+                  
+                  {/* Empty State / Add Card */}
+                  <div 
+                      onClick={() => {
+                          setPlanForm({ features: [] });
+                          setEditingPlanId(null);
+                          setIsEditingPlan(true);
+                      }}
+                      className="bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center p-8 cursor-pointer hover:border-slate-300 hover:bg-slate-100 transition-all min-h-[400px]"
+                  >
+                      <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-slate-300 mb-4 shadow-sm">
+                          <Plus size={32} />
+                      </div>
+                      <p className="font-bold text-slate-500">Adicionar Novo Plano</p>
+                  </div>
+              </div>
+          )}
       </div>
   );
 
   const renderSaaSAdmin = () => {
-    // USE MEMOIZED STATS FROM TOP LEVEL
-    const stats = saasStats;
+    // 1. Calculate Aggregated Metrics from ALL tenants
+    // Logic: Loop through all tenants, access their specific local storage keys, and sum up.
+    
+    // Initial global stats
+    let totalGlobalClients = 0;
+    let totalGlobalEmployees = 0;
+    let totalGlobalServicesPerformed = 0;
+    let totalGlobalGMV = 0; // Gross Merchandise Value (All transactions in salons)
+    
+    // Geographic Stats
+    const cities: Record<string, number> = {};
+    const states: Record<string, number> = {};
+
+    tenants.forEach(tenant => {
+        // Build keys for this tenant
+        const namespace = tenant.slug;
+        
+        // Count Clients
+        const clientsKey = `${namespace}_clients`;
+        const clientsData = localStorage.getItem(clientsKey);
+        const tenantClients = clientsData ? JSON.parse(clientsData).length : 0;
+        totalGlobalClients += tenantClients;
+
+        // Count Employees
+        const empKey = `${namespace}_employees`;
+        const empData = localStorage.getItem(empKey);
+        const tenantEmps = empData ? JSON.parse(empData).length : 0;
+        totalGlobalEmployees += tenantEmps;
+
+        // Count Appointments & Value (GMV)
+        const apptsKey = `${namespace}_appointments`;
+        const apptsData = localStorage.getItem(apptsKey);
+        if (apptsData) {
+            const appts: Appointment[] = JSON.parse(apptsData);
+            const completed = appts.filter(a => a.status === 'completed');
+            totalGlobalServicesPerformed += completed.length;
+            totalGlobalGMV += completed.reduce((sum, a) => sum + a.totalPrice, 0);
+        }
+
+        // Geography
+        if (tenant.city) {
+            cities[tenant.city] = (cities[tenant.city] || 0) + 1;
+        }
+        if (tenant.state) {
+            states[tenant.state] = (states[tenant.state] || 0) + 1;
+        }
+    });
+
+    const activeTenants = tenants.filter(t => t.status === 'active');
+    const totalMRR = activeTenants.reduce((acc, curr) => acc + curr.mrr, 0);
+    
+    // Top Cities Sort
+    const sortedCities = Object.entries(cities).sort((a,b) => b[1] - a[1]).slice(0, 3);
 
     return (
-      <div className="space-y-8 animate-fadeIn max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-           <div>
-              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                 <ShieldCheck className="text-rose-600" /> Super Admin
-              </h1>
-              <p className="text-slate-500">Gestão da Plataforma</p>
-           </div>
-           <button onClick={() => setView(ViewState.MARKETPLACE)} className="text-sm font-bold text-slate-500 hover:text-slate-800">
-              Sair
-           </button>
-        </div>
-
-        {/* Action Tabs */}
-        <div className="flex gap-4 border-b border-slate-200 pb-1">
-            <button className="text-rose-600 border-b-2 border-rose-600 pb-2 font-bold px-2">Dashboard</button>
-            <button onClick={() => setView(ViewState.SAAS_PLANS)} className="text-slate-500 hover:text-slate-800 pb-2 font-medium px-2 flex items-center gap-1"><Ticket size={16}/> Gerenciar Planos</button>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">MRR (Mensal)</p>
-               <h3 className="text-3xl font-bold text-rose-600">R$ {stats.totalRevenue.toFixed(2)}</h3>
-               <p className="text-xs text-green-600 font-bold mt-2 flex items-center gap-1"><TrendingUp size={12}/> +12% esse mês</p>
-           </div>
-           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Total de Salões</p>
-               <h3 className="text-3xl font-bold text-slate-800">{stats.totalTenants}</h3>
-               <p className="text-xs text-slate-400 mt-2">{stats.activeTenants} ativos</p>
-           </div>
-           <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-sm">
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Plano Pro</p>
-               <h3 className="text-3xl font-bold">{stats.proTenants}</h3>
-               <p className="text-xs text-slate-400 mt-2">Salões Pagantes</p>
-           </div>
-        </div>
-
-        {/* Tenants List */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-               <h3 className="font-bold text-slate-800">Salões Cadastrados</h3>
-               <div className="flex gap-2">
-                  <input type="text" placeholder="Buscar salão..." className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm focus:outline-none focus:border-rose-500" />
-               </div>
-            </div>
-            <table className="w-full text-left text-sm">
-               <thead className="bg-slate-50 text-slate-500 font-medium">
-                  <tr>
-                     <th className="px-6 py-3">Nome / Slug</th>
-                     <th className="px-6 py-3">Dono</th>
-                     <th className="px-6 py-3">Plano</th>
-                     <th className="px-6 py-3">Status</th>
-                     <th className="px-6 py-3">MRR</th>
-                     <th className="px-6 py-3">Ações</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {tenants.map(tenant => (
-                     <tr key={tenant.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4">
-                           <p className="font-bold text-slate-800">{tenant.slug}</p>
-                           <p className="text-xs text-slate-400">ID: {tenant.id}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                           <p className="text-slate-700">{tenant.ownerName}</p>
-                           <p className="text-xs text-slate-400">{tenant.email}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${tenant.plan === 'Pro' ? 'bg-purple-100 text-purple-700' : tenant.plan === 'Enterprise' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                              {tenant.plan}
-                           </span>
-                        </td>
-                         <td className="px-6 py-4">
-                           <span className={`flex items-center gap-1 font-bold text-xs ${tenant.status === 'active' ? 'text-green-600' : 'text-red-500'}`}>
-                              <div className={`w-2 h-2 rounded-full ${tenant.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`} />
-                              {tenant.status === 'active' ? 'Ativo' : 'Cancelado'}
-                           </span>
-                        </td>
-                        <td className="px-6 py-4 font-bold text-slate-700">R$ {tenant.mrr}</td>
-                        <td className="px-6 py-4">
-                           <button onClick={() => handleNavigateToSalon(tenant.slug)} className="text-rose-600 hover:underline text-xs font-bold flex items-center gap-1">
-                              <ExternalLink size={12} /> Acessar
-                           </button>
-                        </td>
-                     </tr>
-                  ))}
-               </tbody>
-            </table>
-        </div>
-      </div>
-    );
-  };
-
-  const renderSaaSLandingPage = () => {
-    return (
-      <div className="min-h-screen bg-slate-50">
-          {/* Header */}
-          <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-slate-200">
-             <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-                 <div className="flex items-center gap-2">
-                    <div className="bg-rose-600 p-1.5 rounded-lg text-white">
-                        <Scissors size={20} />
-                    </div>
-                    <span className="font-bold text-xl text-slate-800">BelezaApp <span className="text-slate-400 font-light">Pro</span></span>
-                 </div>
-                 <div className="flex gap-4 items-center">
-                     <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-600 font-bold hover:text-rose-600 flex items-center gap-2 text-sm">
-                         <Lock size={16} /> Área do Parceiro
-                     </button>
-                 </div>
-             </div>
-          </header>
-
-          {/* Hero */}
-          <section className="pt-20 pb-32 px-6 text-center max-w-4xl mx-auto">
-              <span className="text-rose-600 font-bold bg-rose-50 px-3 py-1 rounded-full text-xs mb-6 inline-block uppercase tracking-wider">Software para Salões</span>
-              <h1 className="text-5xl md:text-6xl font-bold text-slate-900 mb-6 leading-tight">
-                  Seu salão com <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-pink-600">agendamento online</span> e gestão completa.
-              </h1>
-              <p className="text-lg text-slate-500 mb-10 max-w-2xl mx-auto">
-                  Encontre os melhores profissionais ou organize seu negócio em um só lugar.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row justify-center gap-4 items-center">
-                  {/* BOTÕES DE ESCOLHA SOLICITADOS PELO USUÁRIO (Estilo Suave) */}
-                  <div className="relative">
-                      <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white text-rose-600 border border-rose-100 pl-6 pr-8 py-4 rounded-full font-bold text-lg hover:bg-rose-50 transition shadow-lg shadow-rose-100 flex items-center justify-center gap-3">
-                          <Heart size={20} className="fill-rose-50 text-rose-500"/> Quero me Cuidar
-                      </button>
-                      
-                      {/* Avatar Stack for Social Proof */}
-                      <div className="absolute -right-8 -top-3 flex -space-x-2 bg-white p-1 rounded-full shadow-sm border border-slate-100">
-                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=64&h=64&fit=crop" alt=""/>
-                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=64&h=64&fit=crop" alt=""/>
-                          <img className="w-6 h-6 rounded-full border-2 border-white object-cover" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=64&h=64&fit=crop" alt=""/>
-                      </div>
-                  </div>
-
-                  <span className="text-slate-300 text-sm font-bold px-2">ou</span>
-
-                  <button onClick={() => setIsLoginModalOpen(true)} className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-8 py-4 rounded-full font-bold text-lg hover:shadow-xl hover:-translate-y-0.5 transition flex items-center justify-center gap-2">
-                      <Briefcase size={20} /> Sou Profissional
-                  </button>
-              </div>
-          </section>
-
-          {/* Features */}
-          <section className="bg-white py-24 border-y border-slate-100">
-              <div className="max-w-6xl mx-auto px-6">
-                  <div className="grid md:grid-cols-3 gap-12">
-                      <div className="text-center">
-                          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                              <Globe size={32} />
-                          </div>
-                          <h3 className="text-xl font-bold text-slate-800 mb-3">Site Exclusivo</h3>
-                          <p className="text-slate-500">Seu salão ganha uma página profissional com link personalizado para enviar no WhatsApp.</p>
-                      </div>
-                      <div className="text-center">
-                          <div className="w-16 h-16 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                              <Wallet size={32} />
-                          </div>
-                          <h3 className="text-xl font-bold text-slate-800 mb-3">Controle Financeiro</h3>
-                          <p className="text-slate-500">Saiba exatamente quanto entra e sai. Controle comissões, despesas e lucro real.</p>
-                      </div>
-                      <div className="text-center">
-                          <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                              <Zap size={32} />
-                          </div>
-                          <h3 className="text-xl font-bold text-slate-800 mb-3">Inteligência Artificial</h3>
-                          <p className="text-slate-500">Descrição de serviços e produtos geradas automaticamente para vender mais.</p>
-                      </div>
-                  </div>
-              </div>
-          </section>
-
-          {/* Dynamic Pricing Section */}
-          <section className="py-24 px-6 bg-slate-50">
-             <div className="max-w-4xl mx-auto text-center mb-12">
-                <h2 className="text-3xl font-bold text-slate-800 mb-4">Planos para todos os tamanhos</h2>
-                <p className="text-slate-500">Escolha o ideal para o seu momento.</p>
-             </div>
-             <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8 px-6">
-                 {saasPlans.map(plan => (
-                     <div key={plan.id} className={`bg-white rounded-3xl p-8 border ${plan.isRecommended ? 'border-rose-500 shadow-xl shadow-rose-100 scale-105 relative z-10' : 'border-slate-100 shadow-lg'}`}>
-                         {plan.isRecommended && (
-                             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-rose-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide shadow-md">
-                                 Mais Escolhido
-                             </div>
-                         )}
-                         <h3 className="text-xl font-bold text-slate-800 text-center">{plan.name}</h3>
-                         <div className="text-center my-6">
-                             <span className="text-4xl font-black text-slate-900">R$ {plan.price}</span>
-                             <span className="text-slate-400 font-medium">/mês</span>
-                         </div>
-                         <ul className="space-y-4 mb-8">
-                             {plan.features.map((feature, i) => (
-                                 <li key={i} className="flex items-center gap-3 text-slate-600 text-sm">
-                                     <CheckCircle2 size={18} className="text-green-500 flex-shrink-0" />
-                                     {feature}
-                                 </li>
-                             ))}
-                         </ul>
-                         <button onClick={() => {
-                            const newSlug = `salao-${plan.name.toLowerCase()}-${Math.floor(Math.random() * 1000)}`;
-                            const newTenant: Tenant = {
-                                id: generateId(), slug: newSlug, ownerName: 'Novo Parceiro', email: 'contato@salao.com', plan: plan.name, status: 'active', mrr: plan.price, createdAt: Date.now()
-                            };
-                            Storage.addTenant(newTenant);
-                            handleNavigateToSalon(newSlug);
-                            setTimeout(() => handleAdminLogin(), 100);
-                         }} className={`w-full py-3 rounded-xl font-bold transition ${plan.isRecommended ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-200' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'}`}>
-                             Começar Agora
-                         </button>
+        <div className="space-y-8 animate-fade-in p-6 max-w-6xl mx-auto bg-slate-50 min-h-screen">
+            <header className="flex justify-between items-center mb-6">
+                <div>
+                    <h1 className="text-3xl font-black text-slate-900">Dashboard SaaS</h1>
+                    <p className="text-slate-500">Inteligência Global da Plataforma</p>
+                </div>
+                <div className="flex items-center gap-4">
+                     <div className="text-right hidden sm:block">
+                        <p className="font-bold text-slate-800 text-sm">Super Admin</p>
+                        <p className="text-xs text-emerald-600 font-bold">● Online</p>
                      </div>
-                 ))}
-             </div>
-          </section>
+                     <button onClick={() => setView(ViewState.SAAS_PLANS)} className="text-sm font-bold text-slate-600 bg-white border border-slate-200 shadow-sm px-5 py-2.5 rounded-full hover:bg-slate-50 transition-colors flex items-center gap-2">
+                        <CreditCard size={16} /> Gerenciar Planos
+                    </button>
+                    <button onClick={handleAdminLogout} className="text-sm font-bold text-rose-600 bg-rose-50 px-5 py-2.5 rounded-full hover:bg-rose-100 transition-colors">
+                        Sair
+                    </button>
+                </div>
+            </header>
 
-          {/* Footer */}
-          <footer className="bg-slate-900 text-white py-12 px-6 text-center">
-              <p className="text-slate-400 mb-4">&copy; 2024 BelezaApp SaaS. Todos os direitos reservados.</p>
-              <button onClick={() => setView(ViewState.SAAS_ADMIN)} className="text-xs text-slate-700 hover:text-slate-500">Área Restrita</button>
-          </footer>
-      </div>
-    );
-  };
-
-  const renderMarketplace = () => (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Search Header */}
-      <div className="relative">
-        <Search className="absolute left-3 top-3.5 text-slate-400" size={20} />
-        <input
-          type="text"
-          placeholder="Buscar barbearias, salões..."
-          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 shadow-sm focus:border-rose-500 focus:ring-rose-500 focus:outline-none"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
-
-      {/* CTA for Business Owners */}
-      <div onClick={() => setView(ViewState.SAAS_LP)} className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 text-white relative overflow-hidden cursor-pointer group shadow-lg">
-          <div className="relative z-10">
-              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider mb-2 inline-block">Para Donos de Salão</span>
-              <h3 className="text-xl font-bold mb-1 group-hover:text-rose-400 transition">Cadastre seu negócio</h3>
-              <p className="text-sm text-slate-300 mb-4 max-w-xs">Tenha agendamento online, site grátis e gestão completa hoje mesmo.</p>
-              <button className="bg-white text-slate-900 px-4 py-2 rounded-lg text-xs font-bold hover:bg-rose-500 hover:text-white transition">Começar Agora</button>
-          </div>
-          <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4 group-hover:scale-110 transition duration-500">
-              <Briefcase size={120} />
-          </div>
-      </div>
-
-      {/* Categories (Mock) */}
-      <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-        {['Todos', 'Barbearia', 'Salão', 'Manicure', 'Estética', 'Infantil'].map((cat, i) => (
-          <button key={i} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition ${i === 0 ? 'bg-rose-600 text-white shadow-md shadow-rose-200' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Salon List */}
-      <div className="grid gap-6">
-        {platformSalons.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())).map(salon => (
-          <div 
-            key={salon.id}
-            onClick={() => handleNavigateToSalon(salon.slug, salon)}
-            className="group bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer hover:shadow-md transition"
-          >
-            <div className="h-40 w-full overflow-hidden relative">
-               <img src={salon.coverUrl} alt={salon.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-               <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg flex items-center gap-1 text-xs font-bold text-slate-800 shadow-sm">
-                  <Star size={12} className="text-amber-400 fill-amber-400" /> {salon.rating}
-               </div>
-            </div>
-            <div className="p-4">
-               <div className="flex justify-between items-start mb-2">
-                 <div>
-                    <h3 className="font-bold text-lg text-slate-800">{salon.name}</h3>
-                    <p className="text-sm text-slate-500">{salon.category}</p>
-                 </div>
-                 <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-rose-500">
-                    <ArrowRight size={18} />
-                 </div>
-               </div>
-               <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <MapPinIcon size={12} /> {salon.location}
-               </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderAdminDashboard = () => {
-    // USE MEMOIZED STATS FROM TOP LEVEL
-    // const dashboardStats = useMemo... (MOVED TO TOP LEVEL)
-
-    return (
-      <div className="space-y-6 animate-fadeIn">
-          {/* Action Bar */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
-               <button 
-                 onClick={() => { setShowLandingPage(true); setView(ViewState.PUBLIC_SALON); }}
-                 className="flex-1 text-xs font-bold text-rose-600 bg-rose-50 px-3 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-rose-100 transition whitespace-nowrap"
-              >
-                 <ExternalLink size={16} /> Ver Loja Online
-              </button>
-              <button 
-                 onClick={() => setView(ViewState.COUPONS)}
-                 className="flex-1 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-100 transition whitespace-nowrap"
-              >
-                 <Ticket size={16} /> Cupons
-              </button>
-          </div>
-
-         {/* Detailed Stats Row */}
-         <div className="grid grid-cols-3 gap-3">
-             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-center">
-                 <p className="text-slate-400 text-[10px] font-bold uppercase mb-1">Visualizações</p>
-                 <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-1">
-                     <Eye size={14} className="text-blue-500" /> {settings.views || 0}
-                 </h3>
-             </div>
-             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-center">
-                 <p className="text-slate-400 text-[10px] font-bold uppercase mb-1">Ticket Médio</p>
-                 <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-1">
-                     <DollarSign size={14} className="text-green-500" /> {dashboardStats.avgTicket.toFixed(0)}
-                 </h3>
-             </div>
-             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-center">
-                 <p className="text-slate-400 text-[10px] font-bold uppercase mb-1">Cancelamentos</p>
-                 <h3 className="text-lg font-bold text-slate-800 flex items-center justify-center gap-1">
-                     <AlertCircle size={14} className="text-red-500" /> {dashboardStats.cancellationRate.toFixed(0)}%
-                 </h3>
-             </div>
-         </div>
-
-         {/* Main KPIs */}
-         <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-800 p-4 rounded-2xl text-white shadow-lg">
-               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Hoje</p>
-               <h3 className="text-2xl font-bold">{dashboardStats.todaysAppointments.length} <span className="text-sm font-normal text-slate-400">agend.</span></h3>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Faturamento Hoje</p>
-               <h3 className="text-2xl font-bold text-green-600">{settings.currency} {dashboardStats.incomeToday}</h3>
-            </div>
-         </div>
-
-         {/* Charts Section */}
-         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                 <BarChart3 size={18} className="text-slate-400" /> Fluxo Semanal
-             </h3>
-             <div className="flex items-end justify-between h-24 gap-2">
-                 {dashboardStats.flowData.map((val, i) => (
-                     <div key={i} className="flex flex-col items-center gap-1 w-full">
-                         <div 
-                            className="w-full bg-rose-100 rounded-t-md relative group hover:bg-rose-200 transition-all"
-                            style={{ height: `${(val / dashboardStats.maxFlow) * 100}%`, minHeight: '4px' }}
-                         >
-                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-rose-600 opacity-0 group-hover:opacity-100 transition">{val}</span>
-                         </div>
-                         <span className="text-[10px] text-slate-400 font-medium">{dashboardStats.weekDays[i]}</span>
-                     </div>
-                 ))}
-             </div>
-         </div>
-
-         {/* Top Products */}
-         {dashboardStats.topProducts.length > 0 && (
-             <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                     <Trophy size={18} className="text-amber-500" /> Produtos Mais Vendidos
-                 </h3>
-                 <div className="space-y-4">
-                     {dashboardStats.topProducts.map((prod, i) => (
-                         <div key={i}>
-                             <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-                                 <span>{prod.name}</span>
-                                 <span>{prod.count} un</span>
-                             </div>
-                             <div className="w-full bg-slate-100 rounded-full h-2">
-                                 <div 
-                                    className="bg-amber-400 h-2 rounded-full" 
-                                    style={{ width: `${(prod.count / dashboardStats.topProducts[0].count) * 100}%` }}
-                                 ></div>
-                             </div>
-                         </div>
-                     ))}
-                 </div>
-             </div>
-         )}
-
-         {/* Next Up */}
-         {dashboardStats.nextAppointment ? (
-            <div className="bg-gradient-to-r from-rose-500 to-purple-600 p-5 rounded-2xl text-white shadow-lg relative overflow-hidden">
-               <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-4">
-                     <div>
-                        <span className="bg-white/20 px-2 py-1 rounded text-xs font-bold backdrop-blur-sm">Próximo Cliente</span>
-                        <h3 className="text-xl font-bold mt-2">{dashboardStats.nextAppointment.clientName || 'Cliente sem nome'}</h3>
-                        <p className="text-white/80 text-sm">{dashboardStats.nextAppointment.serviceName}</p>
-                     </div>
-                     <div className="text-right">
-                        <p className="text-2xl font-bold">{dashboardStats.nextAppointment.time}</p>
-                        <p className="text-xs text-white/60">Hoje</p>
-                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                     <button className="flex-1 bg-white text-rose-600 py-2 rounded-lg font-bold text-xs shadow-sm">Iniciar Atendimento</button>
-                     <button className="px-3 bg-white/20 rounded-lg text-white font-bold hover:bg-white/30"><Phone size={16} /></button>
-                  </div>
-               </div>
-               <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4">
-                  <Clock size={120} />
-               </div>
-            </div>
-         ) : (
-             <div className="bg-slate-50 p-6 rounded-2xl text-center border-2 border-dashed border-slate-200">
-                <p className="text-slate-400 font-medium">Sem próximos agendamentos hoje</p>
-             </div>
-         )}
-
-         {/* Today's List */}
-         <div>
-            <h3 className="font-bold text-slate-800 mb-3 flex justify-between items-center">
-               Agenda de Hoje 
-               <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{dashboardStats.todayStr}</span>
-            </h3>
-            <div className="space-y-3">
-               {dashboardStats.todaysAppointments.length === 0 ? (
-                  <p className="text-slate-400 text-sm text-center py-4">Nenhum agendamento para hoje.</p>
-               ) : (
-                  dashboardStats.todaysAppointments.sort((a,b) => a.time.localeCompare(b.time)).map(app => (
-                     <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                           <div className="bg-slate-50 font-bold text-slate-700 px-3 py-2 rounded-lg text-sm border border-slate-200">
-                              {app.time}
-                           </div>
-                           <div>
-                              <p className="font-bold text-slate-800 text-sm">{app.clientName}</p>
-                              <p className="text-xs text-slate-500">{app.serviceName} • {app.employeeName}</p>
-                              {app.products && app.products.length > 0 && (
-                                 <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-0.5">
-                                    <ShoppingBag size={10} /> + {app.products.length} produtos
-                                 </p>
-                              )}
-                           </div>
+            {/* PRIMARY KPIs (Finance & Scale) */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-slate-900 p-6 rounded-[2rem] shadow-lg shadow-slate-200">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-white/10 rounded-xl text-emerald-400">
+                            <DollarSign size={24} />
                         </div>
-                        <button onClick={() => initiateCancelAppointment(app.id)} className="text-slate-300 hover:text-red-500 p-2">
-                           <X size={18} />
-                        </button>
-                     </div>
-                  ))
-               )}
+                        <span className="text-[10px] font-bold bg-emerald-500 text-white px-2 py-1 rounded-md">+12%</span>
+                    </div>
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-1">MRR (Recorrente)</p>
+                    <p className="text-3xl font-black text-white">R$ {totalMRR.toFixed(2)}</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-start mb-4">
+                         <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                            <BarChart3 size={24} />
+                        </div>
+                    </div>
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-1">GMV (Volume Total)</p>
+                    <p className="text-3xl font-black text-slate-900">R$ {totalGlobalGMV.toFixed(2)}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Valor transacionado nos salões</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                     <div className="flex justify-between items-start mb-4">
+                         <div className="p-3 bg-purple-50 rounded-xl text-purple-600">
+                            <CheckCircle2 size={24} />
+                        </div>
+                    </div>
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-1">Serviços Prestados</p>
+                    <p className="text-3xl font-black text-slate-900">{totalGlobalServicesPerformed}</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                     <div className="flex justify-between items-start mb-4">
+                         <div className="p-3 bg-rose-50 rounded-xl text-rose-600">
+                            <Store size={24} />
+                        </div>
+                    </div>
+                    <p className="text-slate-400 text-xs font-bold uppercase mb-1">Salões Parceiros</p>
+                    <p className="text-3xl font-black text-slate-900">{tenants.length}</p>
+                </div>
             </div>
-         </div>
-      </div>
-    );
-  };
 
-  const renderFinanceDashboard = () => {
-    const totalIncome = transactions.filter(t => t.type === 'income' && t.status === 'paid').reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = transactions.filter(t => t.type === 'expense' && t.status === 'paid').reduce((sum, t) => sum + t.amount, 0);
-    const pendingIncome = transactions.filter(t => t.type === 'income' && t.status === 'pending').reduce((sum, t) => sum + t.amount, 0);
-
-    return (
-      <div className="space-y-6 animate-fadeIn pb-20">
-         <div className="grid grid-cols-2 gap-4">
-             <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
-                 <p className="text-xs font-bold text-green-600 uppercase mb-1">Receitas</p>
-                 <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-1"><TrendingUp size={18} className="text-green-500"/> {totalIncome}</h3>
-             </div>
-             <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
-                 <p className="text-xs font-bold text-red-600 uppercase mb-1">Despesas</p>
-                 <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-1"><TrendingDown size={18} className="text-red-500"/> {totalExpense}</h3>
-             </div>
-         </div>
-         
-         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
-             <div>
-                 <p className="text-xs text-slate-400 font-bold uppercase">Saldo Líquido</p>
-                 <h3 className={`text-xl font-bold ${totalIncome - totalExpense >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                     {settings.currency} {(totalIncome - totalExpense).toFixed(2)}
-                 </h3>
-             </div>
-             <div className="text-right">
-                 <p className="text-xs text-slate-400 font-bold uppercase">A Receber</p>
-                 <p className="text-sm font-bold text-amber-500">{settings.currency} {pendingIncome.toFixed(2)}</p>
-             </div>
-         </div>
-
-         <div>
-             <div className="flex justify-between items-center mb-4">
-                 <h3 className="font-bold text-slate-800">Transações</h3>
-                 <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="text-xs bg-slate-900 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-1">
-                     <Plus size={14} /> Nova
-                 </button>
-             </div>
-             
-             <div className="space-y-3">
-                 {transactions.length === 0 ? (
-                     <p className="text-center text-slate-400 text-sm py-4">Nenhuma transação registrada.</p>
-                 ) : (
-                     transactions.slice().reverse().map(t => (
-                         <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-100 flex items-center justify-between">
-                             <div className="flex items-center gap-3">
-                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                     {t.type === 'income' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                                 </div>
-                                 <div>
-                                     <p className="font-bold text-slate-800 text-sm">{t.title}</p>
-                                     <p className="text-xs text-slate-500 capitalize">{t.category} • {t.date.split('-').reverse().join('/')}</p>
-                                 </div>
-                             </div>
-                             <div className="text-right">
-                                 <p className={`font-bold text-sm ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                                     {t.type === 'income' ? '+' : '-'} {t.amount}
-                                 </p>
-                                 <div className="flex items-center justify-end gap-2">
-                                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${t.status === 'paid' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-600'}`}>
-                                         {t.status === 'paid' ? 'Pago' : 'Pendente'}
-                                     </span>
-                                     <button onClick={() => handleDelete(t.id, 'transaction')} className="text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
-                                 </div>
-                             </div>
+            {/* SECONDARY METRICS (Network Size) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Users Stats */}
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-around">
+                     <div className="text-center">
+                         <div className="bg-orange-50 w-12 h-12 rounded-full flex items-center justify-center text-orange-500 mx-auto mb-2">
+                             <User size={24} />
                          </div>
-                     ))
-                 )}
-             </div>
-         </div>
-      </div>
-    );
-  };
+                         <p className="text-2xl font-black text-slate-800">{totalGlobalClients}</p>
+                         <p className="text-xs text-slate-400 font-bold uppercase">Clientes Finais</p>
+                     </div>
+                     <div className="h-12 w-px bg-slate-100"></div>
+                     <div className="text-center">
+                         <div className="bg-indigo-50 w-12 h-12 rounded-full flex items-center justify-center text-indigo-500 mx-auto mb-2">
+                             <Scissors size={24} />
+                         </div>
+                         <p className="text-2xl font-black text-slate-800">{totalGlobalEmployees}</p>
+                         <p className="text-xs text-slate-400 font-bold uppercase">Profissionais</p>
+                     </div>
+                </div>
 
-  const renderCoupons = () => (
-      <div className="space-y-4 animate-fadeIn">
-          <div className="flex justify-between items-center">
-               <h3 className="font-bold text-lg text-slate-800">Cupons de Desconto</h3>
-               <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2">
-                  <Plus size={16} /> Criar Cupom
-               </button>
-          </div>
-          
-          {coupons.length === 0 ? (
-              <EmptyState icon={Ticket} title="Sem cupons" description="Crie campanhas de desconto." />
-          ) : (
-              <div className="grid gap-4">
-                  {coupons.map(c => (
-                      <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center relative overflow-hidden">
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-rose-500 to-purple-600"></div>
-                          <div>
-                              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Código</p>
-                              <h3 className="text-xl font-black text-slate-800 tracking-wide">{c.code}</h3>
-                              <p className="text-xs text-slate-500 mt-1">
-                                 {c.type === 'percent' ? `${c.discount}% OFF` : `${settings.currency} ${c.discount} OFF`} • {c.usageCount} usos
-                              </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                               <div className={`px-2 py-1 rounded text-xs font-bold uppercase ${c.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
-                                   {c.active ? 'Ativo' : 'Inativo'}
-                               </div>
-                               <button onClick={() => handleDelete(c.id, 'coupon')} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          )}
-      </div>
-  );
-
-  const renderLandingPage = () => {
-    if (!currentSalonMetadata) return <div className="p-10 text-center">Carregando...</div>;
-    return (
-      <div className="animate-fadeIn -m-4 pb-20">
-          <div className="relative h-64 w-full">
-              <img src={currentSalonMetadata.coverUrl} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-              
-              {/* Header Controls - Top Layer */}
-              <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-20">
-                  {/* Left: Back Button (Conditional) */}
-                  <div>
-                    {!isDirectLink && (
-                        <button onClick={() => handleBackToMarketplace()} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition">
-                            <ArrowLeft size={24} />
-                        </button>
-                    )}
-                  </div>
-
-                  {/* Right: Lock & Share */}
-                  <div className="flex gap-3">
-                      <button onClick={() => setIsLoginModalOpen(true)} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition shadow-sm">
-                           <Lock size={24} />
-                      </button>
-                      <button onClick={handleShare} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition shadow-sm">
-                          <Share2 size={24} />
-                      </button>
-                  </div>
-              </div>
-
-              {/* Bottom Info Layer */}
-              <div className="absolute bottom-0 left-0 p-6 text-white w-full z-10">
-                  <div className="flex justify-between items-end">
-                      <div>
-                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider mb-2 inline-block shadow-sm">
-                              {currentSalonMetadata.category}
-                          </span>
-                          <h1 className="text-3xl font-bold mb-1 drop-shadow-md">{currentSalonMetadata.name}</h1>
-                          <p className="text-white/90 text-sm flex items-center gap-1">
-                              <MapPinIcon size={14} /> {currentSalonMetadata.location}
-                          </p>
-                      </div>
-                      <div className="text-right">
-                           <div className="flex items-center gap-1 bg-white/20 backdrop-blur-md px-2 py-1 rounded-lg">
-                               <Star size={16} className="text-amber-400 fill-amber-400" />
-                               <span className="font-bold">{currentSalonMetadata.rating}</span>
-                           </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-
-          <div className="p-6 bg-white rounded-t-3xl -mt-6 relative z-10 space-y-10 min-h-[500px]">
-               {/* About Section */}
-               <div className="space-y-3">
-                   <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                       <Store size={20} className="text-rose-600"/> Sobre Nós
-                   </h3>
-                   <p className="text-slate-500 text-sm leading-relaxed">
-                       Bem-vindo ao {currentSalonMetadata.name}. Somos especialistas em realçar sua beleza com um atendimento exclusivo e personalizado em {currentSalonMetadata.location}. 
-                       Nossa equipe utiliza as melhores técnicas e produtos do mercado.
-                   </p>
-               </div>
-
-               {/* Team Section - Elegant Cards */}
-               <div>
-                   <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-                       <Users size={20} className="text-rose-600"/> Conheça nossos Talentos
-                   </h3>
-                   {employees.length > 0 ? (
-                       <div className="flex overflow-x-auto gap-4 pb-4 no-scrollbar">
-                           {employees.map(emp => (
-                               <div key={emp.id} className="min-w-[140px] flex flex-col items-center">
-                                   <div className="w-24 h-24 rounded-full border-2 border-rose-100 p-1 mb-2">
-                                       <div className="w-full h-full rounded-full overflow-hidden">
-                                           {emp.photoUrl ? (
-                                               <img src={emp.photoUrl} className="w-full h-full object-cover"/>
-                                           ) : (
-                                               <User className="w-full h-full p-4 bg-slate-100 text-slate-400" />
-                                           )}
-                                       </div>
-                                   </div>
-                                   <p className="font-bold text-slate-800 text-sm">{emp.name}</p>
-                                   <p className="text-xs text-rose-500 font-medium">{emp.role}</p>
-                               </div>
-                           ))}
-                       </div>
-                   ) : (
-                       <p className="text-slate-400 text-sm">Equipe não cadastrada.</p>
-                   )}
-               </div>
-
-               {/* Services List - Clean Menu */}
-               <div>
-                   <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-                       <Scissors size={20} className="text-rose-600"/> Experiências
-                   </h3>
-                   {services.length > 0 ? (
-                       <div className="space-y-3">
-                           {services.slice(0, 5).map(service => (
-                               <div key={service.id} className="flex justify-between items-center border-b border-dashed border-slate-200 pb-2">
-                                   <div>
-                                       <p className="font-bold text-slate-700">{service.name}</p>
-                                       <p className="text-xs text-slate-400">{service.duration} min</p>
-                                   </div>
-                                   <span className="font-bold text-slate-900 bg-slate-50 px-2 py-1 rounded text-sm">
-                                       {settings.currency} {service.price}
-                                   </span>
-                               </div>
-                           ))}
-                           {services.length > 5 && (
-                               <button onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }} className="w-full text-center text-xs text-rose-600 font-bold mt-2">
-                                   Ver Menu Completo
-                               </button>
-                           )}
-                       </div>
-                   ) : (
-                       <p className="text-slate-400 text-sm">Nenhum serviço disponível.</p>
-                   )}
-               </div>
-               
-               {/* Location Block */}
-               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                   <h3 className="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2">
-                       <Clock size={16} className="text-slate-500"/> Horários & Local
-                   </h3>
-                   <div className="flex justify-between text-sm text-slate-500 mb-1">
-                       <span>Segunda - Sexta</span>
-                       <span className="font-medium text-slate-700">{settings.openTime} - {settings.closeTime}</span>
-                   </div>
-                   <div className="flex justify-between text-sm text-slate-500 mb-4">
-                       <span>Sábado</span>
-                       <span className="font-medium text-slate-700">09:00 - 18:00</span>
-                   </div>
-                   <div className="flex items-start gap-2 text-sm text-slate-600 border-t border-slate-200 pt-3">
-                       <MapPinIcon size={16} className="text-rose-500 mt-0.5 flex-shrink-0" />
-                       <p>{settings.address || `${currentSalonMetadata.location}, Centro`}</p>
-                   </div>
-               </div>
-          </div>
-
-          {/* Sticky CTA */}
-          <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 p-4 z-40 md:max-w-3xl md:mx-auto">
-              <button 
-                  onClick={() => { setShowLandingPage(false); setIsBookingMode(true); }}
-                  className="w-full bg-gradient-to-r from-rose-500 to-pink-600 text-white py-4 rounded-2xl font-bold text-lg shadow-xl shadow-rose-200/50 hover:shadow-2xl transition flex items-center justify-center gap-2"
-              >
-                  <Calendar size={20} />
-                  Agendar Horário
-              </button>
-          </div>
-      </div>
-    );
-  };
-
-  const renderClientView = () => {
-    if (!currentUser && !isBookingMode) return renderClientAuth();
-
-    // Booking Wizard
-    if (isBookingMode) {
-        return (
-            <div className="animate-fadeIn pb-24">
-                <div className="mb-6 flex items-center gap-4">
-                    <button onClick={() => { if(bookingStep > 0) setBookingStep(bookingStep-1); else setIsBookingMode(false); }} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><ArrowLeft size={20} /></button>
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-800">
-                            {bookingStep === 0 && 'Escolha o Serviço'}
-                            {bookingStep === 1 && 'Escolha o Profissional'}
-                            {bookingStep === 2 && 'Data e Hora'}
-                            {bookingStep === 3 && 'Confirmar'}
-                        </h2>
-                        <div className="flex gap-1 mt-1">
-                            {[0,1,2,3].map(step => (
-                                <div key={step} className={`h-1 w-8 rounded-full ${step <= bookingStep ? 'bg-rose-600' : 'bg-slate-200'}`}></div>
+                {/* Geography Stats */}
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <div className="flex items-center gap-2 mb-4">
+                        <MapPin size={18} className="text-slate-400" />
+                        <h3 className="font-bold text-slate-800">Presença Geográfica</h3>
+                    </div>
+                    <div className="flex gap-4">
+                         <div className="flex-1 bg-slate-50 rounded-xl p-3 text-center">
+                             <p className="text-xl font-bold text-slate-800">{Object.keys(cities).length}</p>
+                             <p className="text-[10px] text-slate-400 uppercase font-bold">Cidades</p>
+                         </div>
+                         <div className="flex-1 bg-slate-50 rounded-xl p-3 text-center">
+                             <p className="text-xl font-bold text-slate-800">{Object.keys(states).length}</p>
+                             <p className="text-[10px] text-slate-400 uppercase font-bold">Estados</p>
+                         </div>
+                    </div>
+                    <div className="mt-4">
+                        <p className="text-xs font-bold text-slate-400 mb-2 uppercase">Top Cidades</p>
+                        <div className="flex gap-2">
+                            {sortedCities.map(([city, count]) => (
+                                <span key={city} className="bg-white border border-slate-200 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
+                                    {city} <span className="text-rose-500 ml-1">{count}</span>
+                                </span>
                             ))}
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {bookingStep === 0 && (
-                     <div className="space-y-3 pb-24">
-                         {services.map(s => {
-                             const isSelected = selectedService?.id === s.id;
-                             return (
-                             <div key={s.id} onClick={() => setSelectedService(s)} className={`bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center cursor-pointer transition group ${isSelected ? 'border-rose-500 ring-1 ring-rose-500 bg-rose-50' : 'border-slate-100 hover:border-rose-300'}`}>
-                                 <div>
-                                     <h3 className="font-bold text-slate-800">{s.name}</h3>
-                                     <p className="text-xs text-slate-500">{s.duration} min • {s.description}</p>
-                                 </div>
-                                 <span className="font-bold text-slate-800">{settings.currency} {s.price}</span>
-                             </div>
-                             )
-                         })}
-                         
-                         {/* Product Add-ons in Step 0 */}
-                         <div className="mt-8">
-                             <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                <ShoppingBag size={18} className="text-rose-500" /> Adicionar Produtos
-                             </h3>
-                             <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-                                 {products.map(p => {
-                                     const qty = getCartCount(p.id);
-                                     const isOutOfStock = p.stock <= 0;
-                                     return (
-                                     <div key={p.id} className="min-w-[140px] bg-white border border-slate-100 rounded-xl p-3 shadow-sm flex flex-col">
-                                         <div className="h-20 bg-slate-100 rounded-lg mb-2 overflow-hidden relative">
-                                             {p.photoUrl && <img src={p.photoUrl} className="w-full h-full object-cover"/>}
-                                             {isOutOfStock && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-[10px] font-bold uppercase">Esgotado</div>}
-                                         </div>
-                                         <p className="font-bold text-xs truncate">{p.name}</p>
-                                         <p className="text-xs text-slate-500 mb-2">{settings.currency} {p.price}</p>
-                                         {!isOutOfStock && (
-                                              qty === 0 ? (
-                                                  <button onClick={(e) => { e.stopPropagation(); handleAddToCart(p); }} className="mt-auto bg-slate-900 text-white text-[10px] py-1.5 rounded-lg font-bold">Adicionar</button>
-                                              ) : (
-                                                  <div className="mt-auto flex items-center justify-between bg-rose-50 rounded-lg p-1">
-                                                      <button onClick={(e) => { e.stopPropagation(); handleRemoveOneFromCart(p.id); }} className="p-0.5 text-rose-600"><Minus size={14}/></button>
-                                                      <span className="text-xs font-bold text-rose-700">{qty}</span>
-                                                      <button onClick={(e) => { e.stopPropagation(); handleAddToCart(p); }} className="p-0.5 text-rose-600"><Plus size={14}/></button>
-                                                  </div>
-                                              )
-                                         )}
-                                     </div>
-                                     )
-                                 })}
-                             </div>
-                         </div>
-                     </div>
-                )}
-                
-                {/* Fixed Continue Button for Step 0 */}
-                {bookingStep === 0 && selectedService && (
-                    <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 p-4 z-50 md:max-w-3xl md:mx-auto">
-                        <button 
-                            onClick={() => setBookingStep(1)}
-                            className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition flex justify-between px-6"
-                        >
-                            <span>Continuar</span>
-                            <span className="bg-white/20 px-2 py-0.5 rounded text-sm">
-                                {settings.currency} { (selectedService.price + cart.reduce((a,b) => a + b.price, 0)).toFixed(2) }
-                            </span>
-                        </button>
-                    </div>
-                )}
-
-                {bookingStep === 1 && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <div onClick={() => { setSelectedEmployee(null); setBookingStep(2); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:border-rose-300 transition text-center flex flex-col items-center justify-center min-h-[160px]">
-                            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-3"><Users size={24}/></div>
-                            <h3 className="font-bold text-slate-800 text-sm">Qualquer Profissional</h3>
-                            <p className="text-xs text-slate-400 mt-1">Maior disponibilidade</p>
-                        </div>
-                        {employees.map(e => (
-                             <div key={e.id} onClick={() => { setSelectedEmployee(e); setBookingStep(2); }} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:border-rose-300 transition text-center flex flex-col items-center">
-                                 <div className="w-16 h-16 bg-slate-100 rounded-full mb-3 overflow-hidden">
-                                     {e.photoUrl ? <img src={e.photoUrl} className="w-full h-full object-cover"/> : <User className="w-full h-full p-4 text-slate-400"/>}
-                                 </div>
-                                 <h3 className="font-bold text-slate-800 text-sm">{e.name}</h3>
-                                 <p className="text-xs text-slate-400 mt-1">{e.role}</p>
-                             </div>
+            {/* CHARTS SECTION (Mocked with CSS) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm h-64 flex flex-col">
+                    <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <TrendingUp size={18} className="text-emerald-500" /> Crescimento de Salões
+                    </h3>
+                    <div className="flex items-end justify-between flex-1 px-2 gap-2">
+                        {/* Fake Bars */}
+                        {[30, 45, 35, 60, 50, 75, 65, 90, 80, 100].map((h, i) => (
+                            <div key={i} className="w-full bg-slate-100 rounded-t-lg relative group hover:bg-emerald-100 transition-colors" style={{height: `${h}%`}}>
+                                <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded">
+                                    {h}
+                                </div>
+                            </div>
                         ))}
                     </div>
-                )}
-
-                {bookingStep === 2 && (
-                    <div className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Selecione a Data</label>
-                            <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">
-                                {Array.from({length: 14}).map((_, i) => {
-                                    const d = new Date();
-                                    d.setDate(d.getDate() + i);
-                                    const isSelected = d.toISOString().split('T')[0] === selectedDate;
-                                    return (
-                                        <button 
-                                            key={i} 
-                                            onClick={() => setSelectedDate(d.toISOString().split('T')[0])}
-                                            className={`min-w-[60px] p-3 rounded-xl border flex flex-col items-center transition ${isSelected ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'}`}
-                                        >
-                                            <span className="text-[10px] font-bold uppercase">{d.toLocaleDateString('pt-BR', {weekday: 'short'}).replace('.','')}</span>
-                                            <span className="text-lg font-bold">{d.getDate()}</span>
-                                        </button>
-                                    )
-                                })}
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Horários Disponíveis</label>
-                            <div className="grid grid-cols-4 gap-3">
-                                {['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00','18:00'].map(time => (
-                                    <button 
-                                        key={time}
-                                        onClick={() => setSelectedTime(time)}
-                                        className={`py-2 rounded-lg text-sm font-bold border transition ${selectedTime === time ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'}`}
-                                    >
-                                        {time}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        
-                        <button 
-                            disabled={!selectedTime}
-                            onClick={() => setBookingStep(3)}
-                            className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Continuar
-                        </button>
+                    <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-bold uppercase">
+                        <span>Jan</span>
+                        <span>Dez</span>
                     </div>
-                )}
+                </div>
 
-                {bookingStep === 3 && selectedService && (
-                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                        <div className="text-center border-b border-slate-100 pb-6">
-                             <div className="w-16 h-16 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                                 <CheckCircle2 size={32} />
-                             </div>
-                             <h3 className="text-xl font-bold text-slate-800">Confirmar Agendamento</h3>
-                             <p className="text-slate-500 text-sm">Revise os detalhes abaixo</p>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div className="flex justify-between">
-                                <span className="text-slate-500 text-sm">Serviço</span>
-                                <span className="font-bold text-slate-800">{selectedService.name}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-500 text-sm">Profissional</span>
-                                <span className="font-bold text-slate-800">{selectedEmployee?.name || 'Preferência do Salão'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-500 text-sm">Data e Hora</span>
-                                <span className="font-bold text-slate-800">{selectedDate.split('-').reverse().join('/')} às {selectedTime}</span>
-                            </div>
-                            {cart.length > 0 && (
-                                <div className="border-t border-dashed border-slate-200 pt-4">
-                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Produtos Adicionais</p>
-                                    {cart.map(p => (
-                                        <div key={p.id} className="flex justify-between text-sm mb-1">
-                                            <span className="text-slate-600">{p.name}</span>
-                                            <span className="font-medium text-slate-800">{settings.currency} {p.price}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        
-                        {/* Coupon Input */}
-                        <div className="bg-slate-50 p-3 rounded-xl flex gap-2">
-                             <input 
-                                type="text" 
-                                placeholder="CUPOM DE DESCONTO" 
-                                className="flex-1 bg-transparent border-none text-sm font-bold uppercase focus:ring-0 placeholder:text-slate-400"
-                                value={couponCodeInput}
-                                onChange={e => setCouponCodeInput(e.target.value)}
-                             />
-                             <button onClick={handleApplyCoupon} className="text-rose-600 text-xs font-bold">APLICAR</button>
-                        </div>
-                        {appliedCoupon && (
-                            <p className="text-green-600 text-xs font-bold text-center">
-                                Cupom {appliedCoupon.code} aplicado! (- {appliedCoupon.type === 'percent' ? `${appliedCoupon.discount}%` : `R$ ${appliedCoupon.discount}`})
-                            </p>
-                        )}
-
-                        <div className="border-t border-slate-100 pt-4 flex justify-between items-center">
-                            <span className="font-bold text-slate-500">Total</span>
-                            <span className="text-2xl font-black text-rose-600">
-                                {settings.currency} { 
-                                    (
-                                      (selectedService.price + cart.reduce((a,b)=>a+b.price,0)) - 
-                                      (appliedCoupon ? (appliedCoupon.type === 'fixed' ? appliedCoupon.discount : (selectedService.price + cart.reduce((a,b)=>a+b.price,0)) * appliedCoupon.discount / 100) : 0)
-                                    ).toFixed(2) 
-                                }
-                            </span>
-                        </div>
-
-                        <button 
-                            onClick={handleConfirmBooking}
-                            className="w-full bg-rose-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition"
-                        >
-                            Confirmar Agendamento
-                        </button>
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm h-64 flex flex-col">
+                     <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <TrendingUp size={18} className="text-blue-500" /> Volume de Agendamentos
+                    </h3>
+                    <div className="flex items-end justify-between flex-1 px-2 gap-2">
+                        {/* Fake Bars */}
+                        {[20, 30, 50, 40, 60, 55, 70, 85, 90, 95].map((h, i) => (
+                            <div key={i} className="w-full bg-slate-100 rounded-t-lg relative group hover:bg-blue-100 transition-colors" style={{height: `${h}%`}}></div>
+                        ))}
                     </div>
-                )}
+                    <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-bold uppercase">
+                        <span>Jan</span>
+                        <span>Dez</span>
+                    </div>
+                </div>
             </div>
-        );
-    }
-    
-    // Client Dashboard (Logged In)
-    return (
-        <div className="animate-fadeIn space-y-6 pb-20">
-             <div className="flex justify-between items-center">
-                 <div>
-                     <h2 className="text-xl font-bold text-slate-800">Olá, {currentUser?.name ? currentUser.name.split(' ')[0] : 'Cliente'}</h2>
-                     <p className="text-sm text-slate-500">Bem-vindo de volta!</p>
-                 </div>
-                 <button onClick={handleLogout} className="text-xs font-bold text-slate-400 hover:text-red-500">Sair</button>
-             </div>
 
-             <div className="bg-rose-600 rounded-2xl p-6 text-white shadow-lg shadow-rose-200 relative overflow-hidden">
-                  <div className="relative z-10">
-                      <p className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2">Próximo Agendamento</p>
-                      {appointments.filter(a => a.clientId === currentUser?.id && a.status === 'scheduled').length > 0 ? (
-                          (() => {
-                              const next = appointments.filter(a => a.clientId === currentUser?.id && a.status === 'scheduled').sort((a,b) => a.date.localeCompare(b.date))[0];
-                              return (
-                                  <div>
-                                      <h3 className="text-2xl font-bold mb-1">{next.serviceName}</h3>
-                                      <p className="text-white/90 text-sm mb-4">{next.date.split('-').reverse().join('/')} às {next.time} • com {next.employeeName}</p>
-                                      <button onClick={() => alert('Função de reagendar em breve')} className="bg-white text-rose-600 px-4 py-2 rounded-lg text-xs font-bold">Gerenciar</button>
-                                  </div>
-                              )
-                          })()
-                      ) : (
-                          <div>
-                              <p className="text-lg font-bold mb-4">Nenhum agendamento futuro.</p>
-                              <button onClick={() => setIsBookingMode(true)} className="bg-white text-rose-600 px-4 py-2 rounded-lg text-xs font-bold">Agendar Agora</button>
-                          </div>
-                      )}
-                  </div>
-                  <CalendarDays className="absolute right-4 bottom-4 opacity-20 text-white" size={80} />
-             </div>
-
-             <div>
-                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800">Histórico</h3>
-                    <button onClick={() => setIsBookingMode(true)} className="text-rose-600 font-bold text-sm flex items-center gap-1"><Plus size={16}/> Novo Agendamento</button>
-                 </div>
-                 <div className="space-y-3">
-                     {appointments.filter(a => a.clientId === currentUser?.id).length === 0 ? (
-                         <p className="text-slate-400 text-sm text-center py-6">Seu histórico aparecerá aqui.</p>
-                     ) : (
-                         appointments.filter(a => a.clientId === currentUser?.id).sort((a,b) => b.createdAt - a.createdAt).map(app => (
-                             <div key={app.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
-                                 <div>
-                                     <h4 className="font-bold text-slate-800">{app.serviceName}</h4>
-                                     <p className="text-xs text-slate-500">{app.date.split('-').reverse().join('/')} • {app.time}</p>
-                                 </div>
-                                 <div>
-                                     <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${app.status === 'completed' ? 'bg-green-100 text-green-700' : app.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                                         {app.status === 'completed' ? 'Concluído' : app.status === 'scheduled' ? 'Agendado' : 'Cancelado'}
-                                     </span>
-                                 </div>
-                             </div>
-                         ))
-                     )}
-                 </div>
-             </div>
+            {/* Tenant List */}
+            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800 text-lg">Gerenciar Parceiros</h3>
+                    <div className="flex gap-2">
+                        <button className="p-2 hover:bg-slate-50 rounded-full text-slate-400"><Search size={20} /></button>
+                        <button className="p-2 bg-slate-900 text-white rounded-full hover:bg-slate-800"><Plus size={20} /></button>
+                    </div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600">
+                        <thead className="bg-slate-50 text-xs uppercase font-bold text-slate-400">
+                            <tr>
+                                <th className="px-6 py-4">Salão</th>
+                                <th className="px-6 py-4">Localização</th>
+                                <th className="px-6 py-4">Plano</th>
+                                <th className="px-6 py-4">Status</th>
+                                <th className="px-6 py-4">MRR</th>
+                                <th className="px-6 py-4"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {tenants.map(tenant => (
+                                <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <p className="font-bold text-slate-800">{tenant.slug}</p>
+                                        <p className="text-xs text-slate-400">{tenant.ownerName}</p>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-1.5">
+                                            <MapPin size={14} className="text-slate-300" />
+                                            <span className="font-medium text-slate-700">{tenant.city}, {tenant.state}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+                                            tenant.plan === 'Enterprise' ? 'bg-purple-50 text-purple-600' :
+                                            tenant.plan === 'Pro' ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-600'
+                                        }`}>
+                                            {tenant.plan}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide flex w-fit items-center gap-1 ${
+                                            tenant.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                                        }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${tenant.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                            {tenant.status === 'active' ? 'Ativo' : 'Cancelado'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 font-bold text-slate-800">
+                                        R$ {tenant.mrr.toFixed(2)}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button className="text-slate-400 hover:text-slate-800 font-bold text-xs border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+                                            Detalhes
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
   };
 
-  const clientTab = (view === ViewState.CLIENT_STORE) ? 'store' : (showLandingPage ? 'home' : 'appointments');
+  const renderContent = () => {
+    // Modal de Login Admin
+    if (showAdminLogin) {
+        return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center animate-fade-in">
+                 {/* Background Image Layer */}
+                <div className="absolute inset-0 z-0">
+                     <img src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=2000" className="w-full h-full object-cover blur-sm" alt="Salon Background" />
+                     <div className="absolute inset-0 bg-black/40" />
+                </div>
+                
+                {/* Login Card */}
+                <div className="relative z-10 bg-white w-full max-w-sm mx-4 rounded-3xl p-8 shadow-2xl animate-scale-in">
+                    <div className="flex justify-between items-center mb-8">
+                        <h3 className="text-xl font-bold text-slate-800">Área do Parceiro</h3>
+                        <button onClick={() => setShowAdminLogin(false)} className="bg-slate-50 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+                            <ArrowLeft size={20} />
+                        </button>
+                    </div>
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Senha de Acesso</label>
+                            <input 
+                                type="password" 
+                                value={adminPass}
+                                onChange={(e) => setAdminPass(e.target.value)}
+                                className="w-full px-5 py-4 border border-slate-200 rounded-2xl focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 bg-slate-50 font-medium text-lg placeholder:text-slate-300"
+                                placeholder="••••••"
+                                autoFocus
+                            />
+                        </div>
+                        <button 
+                            onClick={handleAdminLogin}
+                            className="w-full bg-rose-600 text-white py-4 rounded-2xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-200 active:scale-95 flex justify-center items-center gap-2"
+                        >
+                            <Lock size={18} />
+                            Entrar
+                        </button>
+                        <p className="text-xs text-center text-slate-400">
+                            Senha Salão: <span className="font-mono text-slate-600">admin123</span> <br/>
+                            Senha SaaS: <span className="font-mono text-slate-600">saas123</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Modal de Agendamento (Renderiza sobre tudo se houver serviço selecionado)
+    const bookingModal = renderBookingModal();
+    const checkoutModal = renderCheckoutModal();
+
+    switch (view) {
+      case ViewState.SAAS_LP:
+        return (
+            <>
+                {renderSaaS_LP()}
+                {bookingModal}
+            </>
+        );
+      
+      case ViewState.SAAS_ADMIN:
+        return renderSaaSAdmin();
+
+      case ViewState.SAAS_PLANS:
+        return renderSaaSPlans();
+
+      case ViewState.MARKETPLACE:
+        const salons = getPlatformSalons();
+        return (
+          <div className="p-4 space-y-6 pb-24 animate-fade-in">
+            <header className="flex justify-between items-center py-2 px-2 sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10">
+                 <h2 className="text-2xl font-black text-slate-800 tracking-tight">Explorar</h2>
+                 <button onClick={() => setView(ViewState.SAAS_LP)} className="text-xs font-bold text-rose-600 bg-rose-50 px-4 py-2 rounded-full hover:bg-rose-100 transition-colors">
+                    Sobre o App
+                 </button>
+            </header>
+            
+            <div className="grid grid-cols-1 gap-6">
+              {salons.map(salon => (
+                <div 
+                  key={salon.id} 
+                  onClick={() => handleSalonSelect(salon)}
+                  className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-slate-100 cursor-pointer hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 group"
+                >
+                  <div className="h-48 bg-gray-200 relative overflow-hidden">
+                    <img src={salon.coverUrl} alt={salon.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-bold flex items-center shadow-sm text-slate-800">
+                      <Star size={12} className="text-yellow-400 mr-1 fill-yellow-400" /> {salon.rating}
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="flex justify-between items-start mb-1">
+                       <h3 className="font-bold text-lg text-slate-800">{salon.name}</h3>
+                       <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full uppercase tracking-wide">{salon.category}</span>
+                    </div>
+                    <p className="text-slate-400 text-sm mb-6 flex items-center gap-1.5">
+                        <MapPin size={14} />
+                        {salon.location}
+                    </p>
+                    <button className="w-full py-3.5 bg-slate-50 text-slate-900 rounded-xl font-bold text-sm hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2 group-hover:bg-rose-600 group-hover:text-white">
+                      Ver Salão
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {bookingModal}
+          </div>
+        );
+        
+      case ViewState.PUBLIC_SALON:
+        return (
+            <>
+                {renderSalonLandingPage()}
+                {bookingModal}
+            </>
+        );
+
+      case ViewState.DASHBOARD:
+        return (
+            <>
+                {renderDashboard()}
+                {checkoutModal}
+                {bookingModal}
+            </>
+        );
+
+      case ViewState.SERVICES:
+        return renderServices();
+      
+      case ViewState.PRODUCTS:
+         return renderProducts();
+
+      case ViewState.FINANCE:
+        return renderFinance();
+
+      case ViewState.TEAM:
+        return renderTeam();
+
+      case ViewState.SETTINGS:
+        return renderSettings();
+
+      case ViewState.COUPONS:
+         return <EmptyState icon={Percent} title="Cupons" description="Gerencie promoções e descontos." />;
+
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center h-64 text-center px-6">
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Em Construção</h3>
+            <p className="text-slate-400 text-sm mb-6">Estamos preparando algo incrível nesta tela.</p>
+            <button 
+              onClick={() => setView(ViewState.DASHBOARD)} 
+              className="bg-slate-900 text-white px-6 py-3 rounded-full font-bold text-sm"
+            >
+              Voltar ao Início
+            </button>
+          </div>
+        );
+    }
+  };
+
+  const renderSaaS_LP = () => (
+    <div className="animate-fade-in bg-slate-50 min-h-screen font-sans">
+        {/* Header */}
+        <header className="fixed top-0 left-0 w-full bg-white z-50 px-6 py-4 flex justify-between items-center shadow-sm">
+            <div className="flex items-center gap-2">
+                <div className="bg-rose-600 rounded-lg p-1.5">
+                    <Scissors size={18} className="text-white" />
+                </div>
+                <span className="font-bold text-slate-800 text-lg">BelezaApp <span className="font-light text-slate-400">Pro</span></span>
+            </div>
+            <button 
+                onClick={() => setShowAdminLogin(true)}
+                className="flex items-center gap-2 text-slate-600 font-bold text-sm hover:text-rose-600 transition-colors"
+            >
+                <Lock size={16} />
+                Área do Parceiro
+            </button>
+        </header>
+
+        {/* Spacer for fixed header */}
+        <div className="h-16"></div>
+
+        {/* Hero Section */}
+        <section className="pt-12 pb-16 px-6 text-center max-w-lg mx-auto">
+            <div className="inline-block bg-rose-50 text-rose-500 font-bold px-4 py-1.5 rounded-full uppercase text-[10px] tracking-wider mb-6">
+                Software para Salões
+            </div>
+            
+            <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 leading-[1.15]">
+                Seu salão com <br />
+                <span className="text-rose-500">agendamento</span> <br />
+                <span className="text-rose-500">online</span> e gestão <br />
+                completa.
+            </h1>
+            
+            <p className="text-lg text-slate-500 mb-10 leading-relaxed max-w-xs mx-auto">
+                Encontre os melhores profissionais ou organize seu negócio em um só lugar.
+            </p>
+            
+            <div className="space-y-4">
+                {/* CTA Cliente */}
+                <div className="relative">
+                    <button 
+                      onClick={() => setView(ViewState.MARKETPLACE)}
+                      className="w-full bg-white text-rose-600 p-4 rounded-full font-bold shadow-lg shadow-slate-100 border border-slate-100 hover:bg-rose-50 transition-all active:scale-95 flex items-center justify-center gap-3 text-lg relative z-10"
+                    >
+                      <Heart size={20} className="fill-rose-600" />
+                      Quero me Cuidar
+                    </button>
+                    {/* Face Pile Mock */}
+                    <div className="absolute -top-3 -right-2 z-20 flex -space-x-2">
+                        <img className="w-8 h-8 rounded-full border-2 border-white" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=64" alt="User" />
+                        <img className="w-8 h-8 rounded-full border-2 border-white" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=64" alt="User" />
+                        <img className="w-8 h-8 rounded-full border-2 border-white" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=64" alt="User" />
+                    </div>
+                </div>
+
+                <div className="text-slate-300 text-sm font-medium">ou</div>
+                
+                {/* CTA Profissional */}
+                <button 
+                    onClick={() => setShowAdminLogin(true)}
+                    className="w-full bg-slate-900 text-white p-4 rounded-full font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 text-lg"
+                >
+                   <Store size={20} />
+                   Sou Profissional
+                </button>
+            </div>
+        </section>
+
+        {/* Features Section (Vertical Stack) */}
+        <section className="px-6 pb-20 max-w-lg mx-auto space-y-16">
+            <div className="text-center">
+                <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                    <Globe size={32} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-3">Site Exclusivo</h3>
+                <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">
+                    Seu salão ganha uma página profissional com link personalizado para enviar no WhatsApp.
+                </p>
+            </div>
+
+            <div className="text-center">
+                <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                    <Wallet size={32} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-3">Controle Financeiro</h3>
+                <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">
+                    Saiba exatamente quanto entra e sai. Controle comissões, despesas e lucro real.
+                </p>
+            </div>
+
+            <div className="text-center">
+                <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                    <Zap size={32} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-3">Inteligência Artificial</h3>
+                <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">
+                    Descrição de serviços e produtos geradas automaticamente para vender mais.
+                </p>
+            </div>
+        </section>
+
+        {/* Pricing Section */}
+        <section className="px-6 pb-24 max-w-lg mx-auto">
+            <div className="text-center mb-10">
+                <h2 className="text-2xl font-black text-slate-900 mb-2">Planos para todos os tamanhos</h2>
+                <p className="text-slate-500">Escolha o ideal para o seu momento.</p>
+            </div>
+
+            <div className="space-y-6">
+                {saasPlans.map(plan => (
+                    <div key={plan.id} className={`bg-white rounded-[2rem] p-8 relative text-center ${plan.isRecommended ? 'shadow-xl shadow-rose-100 border-2 border-rose-500 scale-105 z-10' : 'shadow-sm border border-slate-100'}`}>
+                        {plan.isRecommended && (
+                            <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-wider shadow-md">
+                                Mais Escolhido
+                            </div>
+                        )}
+                        <h3 className="font-bold text-slate-800 text-lg mb-4 mt-2">{plan.name}</h3>
+                        <div className="text-4xl font-black text-slate-900 mb-6">
+                            R$ {plan.price}<span className="text-lg font-medium text-slate-400">/mês</span>
+                        </div>
+                        <ul className="text-left space-y-4 mb-8">
+                            {plan.features.map((feature, idx) => (
+                                <li key={idx} className="flex items-center gap-3 text-sm text-slate-600">
+                                    <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                                    {feature}
+                                </li>
+                            ))}
+                        </ul>
+                        <button className={`w-full font-bold py-4 rounded-2xl transition-colors ${plan.isRecommended ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-200' : 'bg-slate-100 text-slate-900 hover:bg-slate-200'}`}>
+                            Começar Agora
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="bg-slate-900 py-12 px-6 text-center">
+            <p className="text-slate-400 text-sm">
+                © 2024 BelezaApp SaaS. Todos os direitos reservados.
+            </p>
+            <button 
+                onClick={() => setShowAdminLogin(true)}
+                className="mt-4 text-slate-700 text-xs hover:text-white transition-colors"
+            >
+                Área Restrita
+            </button>
+        </footer>
+    </div>
+  );
+
+  const renderSalonLandingPage = () => {
+    const employees = getEmployees();
+    const settings = getSettings();
+    const salonData = getPlatformSalons().find(s => s.slug === (new URLSearchParams(window.location.search).get('salon') || 'barbearia-vintage')) || getPlatformSalons()[0];
+
+    // ABA LOJA: Mostra a lista de produtos
+    if (activeClientTab === 'store') {
+        return (
+            <div className="animate-fade-in bg-white min-h-screen pb-24 px-6 pt-6">
+                 <h2 className="text-2xl font-black text-slate-800 mb-2">Loja</h2>
+                 <p className="text-slate-500 mb-6">Produtos disponíveis no salão</p>
+                 
+                 <div className="grid grid-cols-2 gap-4">
+                     {products.map(product => (
+                         <div key={product.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                             <div className="h-32 bg-slate-100 relative">
+                                 {product.photoUrl ? (
+                                    <img src={product.photoUrl} className="w-full h-full object-cover" alt={product.name} />
+                                 ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><Package /></div>
+                                 )}
+                             </div>
+                             <div className="p-4 flex-1 flex flex-col">
+                                 <h3 className="font-bold text-slate-800 text-sm mb-1">{product.name}</h3>
+                                 <p className="text-[10px] text-slate-400 line-clamp-2 mb-3 flex-1">{product.description}</p>
+                                 <div className="flex justify-between items-center mt-auto">
+                                     <span className="font-bold text-slate-900">R$ {product.price}</span>
+                                 </div>
+                             </div>
+                         </div>
+                     ))}
+                 </div>
+                 {products.length === 0 && (
+                     <EmptyState icon={ShoppingBag} title="Loja Vazia" description="Nenhum produto cadastrado no momento." />
+                 )}
+            </div>
+        )
+    }
+
+    // ABA CONTA (Novo)
+    if (activeClientTab === 'appointments') {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Se não estiver logado
+        if (!clientLoggedInPhone) {
+            return (
+                <div className="animate-fade-in bg-white min-h-screen pb-24 px-6 flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mb-6">
+                        <User size={32} />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-800 mb-2 text-center">Acessar sua Conta</h2>
+                    <p className="text-slate-500 text-center mb-8 max-w-xs">
+                        Digite seu telefone para ver seus agendamentos e histórico.
+                    </p>
+                    <div className="w-full max-w-sm space-y-4">
+                        <div className="relative">
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input 
+                                type="tel" 
+                                value={clientLoginInput}
+                                onChange={(e) => setClientLoginInput(e.target.value)}
+                                placeholder="(11) 99999-9999"
+                                className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-rose-500 font-medium"
+                            />
+                        </div>
+                        <button 
+                            onClick={handleClientLogin}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-colors"
+                        >
+                            Ver Meus Agendamentos
+                        </button>
+                    </div>
+                </div>
+            )
+        }
+
+        // Se estiver logado
+        const myAppointments = appointments.filter(app => app.clientId === clientLoggedInPhone || app.clientName.includes(clientLoggedInPhone)); // Fallback check
+        const futureAppointments = myAppointments.filter(app => app.date >= today && app.status !== 'cancelled').sort((a, b) => a.date.localeCompare(b.date));
+        const pastAppointments = myAppointments.filter(app => app.date < today || app.status === 'completed' || app.status === 'cancelled').sort((a, b) => b.date.localeCompare(a.date));
+        const clientInfo = clients.find(c => c.phone === clientLoggedInPhone);
+
+        return (
+            <div className="animate-fade-in bg-white min-h-screen pb-24 px-6 pt-6">
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h2 className="text-2xl font-black text-slate-800">Olá, {clientInfo?.name.split(' ')[0] || 'Cliente'}</h2>
+                        <p className="text-xs text-slate-500">Acompanhe sua agenda aqui.</p>
+                    </div>
+                    <button onClick={() => setClientLoggedInPhone(null)} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-rose-500">
+                        <LogOut size={18} />
+                    </button>
+                </div>
+
+                <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
+                    <CalendarDays size={18} className="text-rose-500" /> Próximos
+                </h3>
+                <div className="space-y-4 mb-8">
+                    {futureAppointments.length > 0 ? futureAppointments.map(app => (
+                        <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                             <div className="flex justify-between items-start mb-4">
+                                 <div className="flex gap-3">
+                                     <div className="w-12 h-12 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center font-bold text-sm">
+                                         {app.date.split('-')[2]}
+                                     </div>
+                                     <div>
+                                         <h4 className="font-bold text-slate-800">{app.serviceName}</h4>
+                                         <p className="text-xs text-slate-500">às {app.time} com {app.employeeName}</p>
+                                     </div>
+                                 </div>
+                                 <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">
+                                     Confirmado
+                                 </span>
+                             </div>
+                             {app.products && app.products.length > 0 && (
+                                 <div className="mb-4 text-xs text-slate-500 bg-slate-50 p-2 rounded-xl">
+                                     + {app.products.length} produtos adicionados
+                                 </div>
+                             )}
+                             <button 
+                                onClick={() => handleCancelAppointment(app.id)}
+                                className="w-full py-2 border border-slate-200 text-slate-500 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-colors"
+                             >
+                                 Cancelar Agendamento
+                             </button>
+                        </div>
+                    )) : (
+                        <div className="bg-slate-50 rounded-2xl p-6 text-center">
+                            <p className="text-sm text-slate-500 mb-2">Você não tem agendamentos futuros.</p>
+                            <button onClick={() => setActiveClientTab('home')} className="text-xs font-bold text-rose-600">Agendar Agora</button>
+                        </div>
+                    )}
+                </div>
+
+                <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
+                    <History size={18} className="text-slate-400" /> Histórico
+                </h3>
+                <div className="space-y-4 opacity-75">
+                     {pastAppointments.length > 0 ? pastAppointments.map(app => (
+                        <div key={app.id} className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center">
+                            <div>
+                                <h4 className="font-bold text-slate-700 text-sm">{app.serviceName}</h4>
+                                <p className="text-xs text-slate-400">{app.date.split('-').reverse().join('/')} • {app.time}</p>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${
+                                app.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
+                                app.status === 'cancelled' ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-500'
+                            }`}>
+                                {app.status === 'completed' ? 'Concluído' : app.status === 'cancelled' ? 'Cancelado' : 'Passado'}
+                            </span>
+                        </div>
+                    )) : (
+                        <p className="text-center text-sm text-slate-400 py-4">Nenhum histórico disponível.</p>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ABA INÍCIO (Capa, Serviços, etc)
+    return (
+      <div className="animate-fade-in bg-white min-h-screen pb-24">
+        {/* Immersive Header */}
+        <div className="relative h-[40vh] w-full">
+            <img 
+                src={salonData.coverUrl} 
+                alt="Capa do Salão" 
+                className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"></div>
+            
+            {/* Top Navigation Bar */}
+            <div className="absolute top-0 left-0 w-full p-6 pt-safe flex justify-between items-start z-20">
+                {!isDirectLink ? (
+                    <button 
+                        onClick={() => setView(ViewState.MARKETPLACE)}
+                        className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 hover:bg-white/30 transition-all"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                ) : <div className="w-10"></div>}
+
+                <div className="flex gap-3">
+                    <button 
+                        onClick={handleShare}
+                        className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 hover:bg-white/30 transition-all active:scale-95"
+                    >
+                        <Share2 size={18} />
+                    </button>
+                    <button 
+                        onClick={() => setShowAdminLogin(true)}
+                        className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 hover:bg-white/30 transition-all active:scale-95"
+                    >
+                        <Lock size={16} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Salon Intro Card */}
+            <div className="absolute bottom-0 left-0 w-full translate-y-8 px-6 z-10">
+                <div className="bg-white rounded-[2rem] p-6 shadow-xl shadow-slate-200/50">
+                    <div className="flex justify-between items-start mb-2">
+                        <div>
+                            <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-3 py-1 rounded-full uppercase tracking-wide mb-2 inline-block">
+                                {salonData.category}
+                            </span>
+                            <h1 className="text-2xl font-bold text-slate-800 leading-tight">{settings.shopName}</h1>
+                        </div>
+                        <div className="flex flex-col items-center justify-center bg-slate-50 rounded-2xl w-14 h-14 border border-slate-100">
+                            <span className="font-bold text-slate-900 text-lg">{salonData.rating}</span>
+                            <div className="flex text-yellow-400 text-[8px]">★★★★★</div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-400 text-sm mb-6">
+                        <MapPin size={16} className="text-rose-400 shrink-0" />
+                        <span className="truncate">{salonData.location}</span>
+                    </div>
+
+                    {/* Floating Actions */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <button className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 py-3.5 rounded-2xl font-bold text-sm hover:bg-emerald-100 transition-colors">
+                            <Phone size={18} /> WhatsApp
+                        </button>
+                        <button className="flex items-center justify-center gap-2 bg-slate-50 text-slate-700 py-3.5 rounded-2xl font-bold text-sm hover:bg-slate-100 transition-colors">
+                            <MapPin size={18} /> Ver Rota
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div className="h-12"></div> {/* Spacer for the overlapping card */}
+
+        {/* Team Section */}
+        <section className="px-6 py-8">
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-bold text-slate-800">Nossos Profissionais</h2>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-4 -mx-6 px-6 no-scrollbar">
+                {employees.map(employee => (
+                    <div key={employee.id} className="min-w-[140px] flex flex-col items-center">
+                        <div className="w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-rose-400 to-purple-500 mb-3">
+                            <div className="w-full h-full rounded-full border-2 border-white overflow-hidden bg-slate-100 relative">
+                                {employee.photoUrl ? (
+                                    <img src={employee.photoUrl} alt={employee.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <Users className="w-full h-full p-6 text-slate-300" />
+                                )}
+                            </div>
+                        </div>
+                        <h3 className="font-bold text-slate-800 text-sm text-center">{employee.name}</h3>
+                        <p className="text-[10px] text-slate-400 uppercase font-medium tracking-wide">{employee.role}</p>
+                    </div>
+                ))}
+            </div>
+        </section>
+
+        {/* Services List */}
+        <section className="px-6 pb-6">
+            <h2 className="text-lg font-bold text-slate-800 mb-6">Menu de Serviços</h2>
+            <div className="space-y-4">
+                {services.map(service => (
+                    <div key={service.id} className="group bg-white rounded-3xl p-1 border border-slate-100 hover:border-rose-100 hover:shadow-lg hover:shadow-rose-100/50 transition-all duration-300">
+                        <div className="flex items-center p-4 gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-rose-500 group-hover:text-white transition-colors duration-300">
+                                <Scissors size={20} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-bold text-slate-800 truncate">{service.name}</h3>
+                                <p className="text-xs text-slate-400 truncate mt-0.5">{service.duration} min • {service.description}</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="block font-bold text-slate-900 mb-1">R$ {service.price}</span>
+                                <button 
+                                  onClick={() => openBookingModal(service)}
+                                  className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full hover:bg-rose-600 transition-colors"
+                                >
+                                    Agendar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </section>
+        
+        {/* Info Box */}
+        <section className="px-6 mb-8">
+            <div className="bg-slate-50 rounded-[2rem] p-6 flex items-start gap-4">
+                <div className="bg-white p-3 rounded-full shadow-sm text-rose-500">
+                    <Clock size={20} />
+                </div>
+                <div>
+                    <h3 className="font-bold text-slate-800 text-sm mb-1">Horário de Funcionamento</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                        Segunda a Sexta: <span className="text-slate-700 font-medium">{settings.openTime} às {settings.closeTime}</span><br/>
+                        Sábado: <span className="text-slate-700 font-medium">09:00 às 14:00</span>
+                    </p>
+                    <div className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-white px-3 py-1 rounded-full shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Aberto Agora
+                    </div>
+                </div>
+            </div>
+        </section>
+      </div>
+    );
+  };
+
+  const renderBookingModal = () => {
+    if (!selectedServiceForBooking) return null;
+
+    const timeSlots = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+    const productsTotal = bookingCart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+    const grandTotal = selectedServiceForBooking.price + productsTotal;
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={closeBookingModal} />
+        
+        <div className="relative bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+          
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-slate-800">
+              {bookingStep === 1 && 'Escolha o Profissional'}
+              {bookingStep === 2 && 'Deseja algo mais?'}
+              {bookingStep === 3 && 'Escolha o Horário'}
+              {bookingStep === 4 && 'Seus Dados'}
+              {bookingStep === 5 && 'Agendado!'}
+            </h3>
+            <button onClick={closeBookingModal} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-slate-600">
+              <X size={20} />
+            </button>
+          </div>
+
+          {bookingStep === 1 && (
+             <div className="space-y-4">
+                 <p className="text-sm text-slate-500">Selecione quem fará o seu atendimento.</p>
+                 <div className="space-y-3">
+                     {employees.map(employee => (
+                         <div 
+                            key={employee.id}
+                            onClick={() => {
+                                setSelectedEmployeeForBooking(employee);
+                                setBookingStep(2);
+                            }}
+                            className="flex items-center p-3 rounded-2xl bg-white border border-slate-100 shadow-sm hover:border-rose-500 hover:shadow-rose-100 transition-all cursor-pointer group"
+                         >
+                            <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-rose-400 to-purple-500 mr-4">
+                                <div className="w-full h-full rounded-full border-2 border-white overflow-hidden bg-slate-100 relative">
+                                    {employee.photoUrl ? (
+                                        <img src={employee.photoUrl} alt={employee.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <Users className="w-full h-full p-3 text-slate-300" />
+                                    )}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-slate-800 text-base">{employee.name}</h4>
+                                <p className="text-xs text-slate-400">{employee.role}</p>
+                            </div>
+                            <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-rose-500">
+                                <ChevronRight />
+                            </div>
+                         </div>
+                     ))}
+                 </div>
+             </div>
+          )}
+
+          {bookingStep === 2 && (
+            <div className="space-y-6">
+                <p className="text-sm text-slate-500">Aproveite para levar produtos da nossa loja.</p>
+                <div className="space-y-3 max-h-[40vh] overflow-y-auto">
+                    {products.map(product => {
+                        const cartItem = bookingCart.find(item => item.product.id === product.id);
+                        const qty = cartItem ? cartItem.quantity : 0;
+                        return (
+                            <div key={product.id} className={`flex items-center p-3 rounded-2xl border transition-all ${qty > 0 ? 'border-rose-500 bg-rose-50' : 'border-slate-100 bg-white'}`}>
+                                <div className="w-12 h-12 bg-slate-200 rounded-xl overflow-hidden shrink-0 mr-3">
+                                    {product.photoUrl && <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />}
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-slate-800 text-sm">{product.name}</h4>
+                                    <p className="text-xs text-slate-500">R$ {product.price}</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {qty > 0 && (
+                                        <>
+                                            <button 
+                                                onClick={() => updateBookingQuantity(product, -1)}
+                                                className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50"
+                                            >
+                                                <Minus size={14} />
+                                            </button>
+                                            <span className="font-bold text-slate-900 text-sm w-4 text-center">{qty}</span>
+                                        </>
+                                    )}
+                                    <button 
+                                        onClick={() => updateBookingQuantity(product, 1)}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${qty > 0 ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                    >
+                                        <Plus size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    })}
+                    {products.length === 0 && <p className="text-center text-slate-400 text-sm py-4">Nenhum produto disponível.</p>}
+                </div>
+
+                <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                    <div>
+                        <span className="text-xs text-slate-400 block">Total estimado</span>
+                        <span className="text-lg font-black text-slate-900">R$ {grandTotal}</span>
+                    </div>
+                    <button 
+                        onClick={() => setBookingStep(3)}
+                        className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800"
+                    >
+                        {bookingCart.length > 0 ? 'Continuar' : 'Pular'}
+                    </button>
+                </div>
+            </div>
+          )}
+
+          {bookingStep === 3 && (
+            <div className="space-y-6">
+               <div className="bg-rose-50 p-4 rounded-2xl flex flex-col gap-3">
+                  <div className="flex items-center gap-4">
+                      <div className="bg-white p-2 rounded-xl text-rose-500 shadow-sm">
+                        <Scissors size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-800">{selectedServiceForBooking.name}</h4>
+                        <p className="text-xs text-slate-500">
+                            com <span className="font-bold">{selectedEmployeeForBooking?.name}</span> • R$ {selectedServiceForBooking.price}
+                        </p>
+                      </div>
+                  </div>
+                  {bookingCart.length > 0 && (
+                      <div className="pt-3 border-t border-rose-100/50">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Produtos Selecionados</p>
+                          <div className="space-y-1">
+                              {bookingCart.map(item => (
+                                  <div key={item.product.id} className="flex justify-between text-xs text-slate-600">
+                                      <span>{item.quantity}x {item.product.name}</span>
+                                      <span className="font-bold">R$ {item.product.price * item.quantity}</span>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+               </div>
+
+               <div>
+                 <label className="block text-sm font-bold text-slate-700 mb-2">Data</label>
+                 <input 
+                    type="date" 
+                    value={bookingDate} 
+                    onChange={(e) => setBookingDate(e.target.value)}
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-700"
+                 />
+               </div>
+
+               <div>
+                 <label className="block text-sm font-bold text-slate-700 mb-2">Horários Disponíveis</label>
+                 <div className="grid grid-cols-4 gap-2">
+                    {timeSlots.map(time => (
+                      <button
+                        key={time}
+                        onClick={() => setBookingTime(time)}
+                        className={`py-2 rounded-xl text-sm font-bold transition-all ${
+                          bookingTime === time 
+                          ? 'bg-rose-600 text-white shadow-lg shadow-rose-200 scale-105' 
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {time}
+                      </button>
+                    ))}
+                 </div>
+               </div>
+               
+               <div className="flex gap-3 mt-4">
+                   <button 
+                      onClick={() => setBookingStep(2)}
+                      className="flex-1 py-4 text-slate-400 font-bold text-sm hover:text-slate-600"
+                   >
+                     Voltar
+                   </button>
+                   <button 
+                      disabled={!bookingTime || !bookingDate}
+                      onClick={() => setBookingStep(4)}
+                      className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition-colors"
+                   >
+                     Continuar
+                   </button>
+               </div>
+            </div>
+          )}
+
+          {bookingStep === 4 && (
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Seu Telefone</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <input 
+                      type="tel" 
+                      value={clientPhone}
+                      onChange={(e) => setClientPhone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-rose-500 font-medium"
+                    />
+                  </div>
+                  {clientPhone.length > 0 && clientPhone.length < 8 && <p className="text-xs text-rose-500 mt-1 ml-1">Digite um telefone válido para verificar cadastro.</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Seu Nome</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <input 
+                      type="text" 
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      placeholder="Ex: Maria Silva"
+                      // If user is found, name is auto-filled. Can be edited, but usually not needed.
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-rose-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Date of Birth field - Only if NEW CLIENT */}
+                {isNewClient && (
+                    <div className="animate-fade-in bg-rose-50 p-4 rounded-2xl border border-rose-100">
+                        <div className="flex items-center gap-2 mb-2">
+                             <AlertCircle size={16} className="text-rose-500" />
+                             <label className="text-sm font-bold text-slate-800">Primeiro Acesso?</label>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-3">Complete seu cadastro informando sua data de nascimento.</p>
+                        <input 
+                            type="date" 
+                            value={clientBirthDate}
+                            onChange={(e) => setClientBirthDate(e.target.value)}
+                            className="w-full p-3 bg-white rounded-xl border-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-700"
+                        />
+                    </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
+                 <div className="flex justify-between text-sm text-slate-500">
+                    <span>Serviço</span>
+                    <span>{selectedServiceForBooking.name}</span>
+                 </div>
+                 <div className="flex justify-between text-sm text-slate-500">
+                    <span>Profissional</span>
+                    <span>{selectedEmployeeForBooking?.name}</span>
+                 </div>
+                 {bookingCart.length > 0 && (
+                     <div className="pt-2 mt-2 border-t border-slate-200">
+                        {bookingCart.map(item => (
+                            <div key={item.product.id} className="flex justify-between text-xs text-slate-500 mb-1">
+                                <span>{item.quantity}x {item.product.name}</span>
+                                <span>R$ {item.product.price * item.quantity}</span>
+                            </div>
+                        ))}
+                     </div>
+                 )}
+                 <div className="flex justify-between text-sm text-slate-500 pt-2 border-t border-slate-200">
+                    <span>Data e Hora</span>
+                    <span>{bookingDate.split('-').reverse().join('/')} às {bookingTime}</span>
+                 </div>
+                 <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-slate-800">
+                    <span>Total</span>
+                    <span>R$ {grandTotal}</span>
+                 </div>
+              </div>
+
+              <button 
+                  onClick={confirmBooking}
+                  className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200"
+               >
+                 Confirmar Agendamento
+               </button>
+               <button 
+                  onClick={() => setBookingStep(3)}
+                  className="w-full py-2 text-slate-400 font-bold text-sm hover:text-slate-600"
+               >
+                 Voltar
+               </button>
+            </div>
+          )}
+
+          {bookingStep === 5 && (
+            <div className="text-center py-8">
+               <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-scale-in">
+                 <CheckCircle2 size={40} />
+               </div>
+               <h4 className="text-2xl font-black text-slate-800 mb-2">Agendamento Confirmado!</h4>
+               <p className="text-slate-500 mb-8 max-w-xs mx-auto">
+                 Te esperamos no dia <span className="font-bold text-slate-700">{bookingDate.split('-').reverse().join('/')}</span> às <span className="font-bold text-slate-700">{bookingTime}</span> com <span className="font-bold text-slate-700">{selectedEmployeeForBooking?.name}</span>.
+               </p>
+               <button 
+                  onClick={closeBookingModal}
+                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-colors"
+               >
+                 Fechar
+               </button>
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  };
+
+  const renderCheckoutModal = () => {
+      if (!checkoutAppointment) return null;
+
+      // Group existing products from appointment (flattened list to counts)
+      const existingProductCounts: Record<string, number> = {};
+      (checkoutAppointment.products || []).forEach(p => {
+          existingProductCounts[p.id] = (existingProductCounts[p.id] || 0) + 1;
+      });
+      const uniqueExistingProducts = Array.from(new Set((checkoutAppointment.products || []).map(p => p.id)))
+        .map(id => checkoutAppointment.products!.find(p => p.id === id)!);
+
+
+      const newProductsTotal = checkoutCart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+      const grandTotal = checkoutAppointment.totalPrice + newProductsTotal;
+
+      return (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={closeCheckoutModal} />
+            <div className="relative bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-slate-800">Finalizar Atendimento</h3>
+                    <button onClick={closeCheckoutModal} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-slate-600">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="space-y-6">
+                    {/* Client Summary */}
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center font-bold text-lg">
+                            {checkoutAppointment.clientName?.charAt(0)}
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-slate-800">{checkoutAppointment.clientName}</h4>
+                            <p className="text-xs text-slate-500">{checkoutAppointment.serviceName}</p>
+                        </div>
+                    </div>
+
+                    {/* Products Add Section */}
+                    <div>
+                        <h5 className="font-bold text-slate-700 text-sm mb-3 flex items-center gap-2">
+                            <ShoppingBag size={16} /> Adicionar Produtos (Checkout)
+                        </h5>
+                        <div className="bg-slate-50 rounded-2xl p-2 space-y-2 max-h-[150px] overflow-y-auto">
+                            {products.map(product => {
+                                const cartItem = checkoutCart.find(item => item.product.id === product.id);
+                                const qty = cartItem ? cartItem.quantity : 0;
+                                return (
+                                    <div key={product.id} className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="flex items-center gap-2">
+                                            {product.photoUrl && <img src={product.photoUrl} className="w-8 h-8 rounded-lg object-cover" />}
+                                            <div className="text-xs">
+                                                <p className="font-bold text-slate-800">{product.name}</p>
+                                                <p className="text-slate-500">R$ {product.price}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {qty > 0 && (
+                                                <>
+                                                    <button 
+                                                        onClick={() => updateCheckoutQuantity(product, -1)}
+                                                        className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200"
+                                                    >
+                                                        <Minus size={12} />
+                                                    </button>
+                                                    <span className="text-xs font-bold text-slate-800 w-3 text-center">{qty}</span>
+                                                </>
+                                            )}
+                                            <button 
+                                                onClick={() => updateCheckoutQuantity(product, 1)} 
+                                                className={`w-6 h-6 rounded-full flex items-center justify-center hover:opacity-90 ${qty > 0 ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'}`}
+                                            >
+                                                <Plus size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Totals */}
+                     <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
+                        <div className="flex justify-between text-sm text-slate-500">
+                            <span>Serviço Original</span>
+                            <span>R$ {checkoutAppointment.price}</span>
+                        </div>
+                        {uniqueExistingProducts.length > 0 && (
+                             <div className="pt-1 border-t border-slate-200/50 mt-1">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Agendados</p>
+                                {uniqueExistingProducts.map(p => (
+                                    <div key={p.id} className="flex justify-between text-xs text-slate-500">
+                                        <span>{existingProductCounts[p.id]}x {p.name}</span>
+                                        <span>R$ {p.price * existingProductCounts[p.id]}</span>
+                                    </div>
+                                ))}
+                             </div>
+                        )}
+                         {checkoutCart.length > 0 && (
+                            <div className="pt-1 border-t border-slate-200/50 mt-1">
+                                <p className="text-[10px] text-emerald-600 font-bold uppercase mb-1">Adicionados Agora</p>
+                                {checkoutCart.map(item => (
+                                    <div key={item.product.id} className="flex justify-between text-xs text-emerald-600 font-medium">
+                                        <span>{item.quantity}x {item.product.name}</span>
+                                        <span>R$ {item.product.price * item.quantity}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="pt-2 border-t border-slate-200 flex justify-between text-lg font-black text-slate-800">
+                            <span>Total Final</span>
+                            <span>R$ {grandTotal}</span>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={finalizeCheckout}
+                        className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
+                    >
+                        <DollarSign size={20} /> Confirmar Pagamento
+                    </button>
+                </div>
+            </div>
+          </div>
+      )
+  }
 
   return (
     <Layout 
-        currentView={view} 
-        setView={setView} 
-        salonName={settings.shopName}
-        activeClientTab={clientTab}
-        onClientTabChange={(tab) => {
-            if (tab === 'home') {
-                setShowLandingPage(true);
-                setView(ViewState.PUBLIC_SALON);
-                setIsBookingMode(false);
-            } else if (tab === 'store') {
-                setView(ViewState.CLIENT_STORE);
-                setShowLandingPage(false);
-                setIsBookingMode(false);
-            } else {
-                setView(ViewState.PUBLIC_SALON);
-                setShowLandingPage(false);
-                setIsBookingMode(false);
-            }
-        }}
+      currentView={view} 
+      setView={setView} 
+      salonName={salonName}
+      activeClientTab={activeClientTab}
+      onClientTabChange={setActiveClientTab}
     >
-      
-      {view === ViewState.MARKETPLACE && renderMarketplace()}
-      {view === ViewState.SAAS_LP && renderSaaSLandingPage()}
-      {view === ViewState.SAAS_ADMIN && renderSaaSAdmin()}
-      {view === ViewState.SAAS_PLANS && renderSaasPlans()}
-      
-      {view === ViewState.DASHBOARD && renderAdminDashboard()}
-      {view === ViewState.FINANCE && renderFinanceDashboard()}
-      {view === ViewState.COUPONS && renderCoupons()}
-
-      {view === ViewState.CLIENT_AUTH && renderClientAuth()}
-      {view === ViewState.CLIENT_STORE && renderClientStore()}
-
-      {(view === ViewState.CLIENT_PREVIEW || view === ViewState.PUBLIC_SALON) && (
-        showLandingPage && view === ViewState.PUBLIC_SALON 
-          ? renderLandingPage() 
-          : (!currentUser
-              // Intercept Client View to show Auth if not logged in and trying to book/view dashboard
-              ? (isBookingMode ? renderClientAuth() : renderClientView()) 
-              : renderClientView())
-      )}
-
-      {/* Admin Views */}
-      {view === ViewState.SERVICES && (
-        <>
-          {services.length === 0 ? (
-            <EmptyState icon={Scissors} title="Sem serviços" description="Adicione serviços." action={ <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="mt-4 bg-rose-600 text-white px-6 py-2 rounded-full font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2"> <Plus size={20} /> Adicionar Serviço </button> } />
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {services.map(service => ( <div key={service.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start"> <div> <h3 className="font-bold text-slate-800">{service.name}</h3> <p className="text-sm text-slate-500 mt-1 line-clamp-2">{service.description}</p> <div className="flex items-center gap-3 mt-3"> <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-medium flex items-center gap-1"> <Clock size={12} /> {service.duration} min </span> <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-md font-bold flex items-center gap-1"> <DollarSign size={12} /> {service.price} </span> </div> </div> <button onClick={() => handleDelete(service.id, 'service')} className="text-slate-300 hover:text-red-500 p-2"> <Trash2 size={18} /> </button> </div> ))}
-            </div>
-          )}
-          <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10"> <Plus size={24} /> </button>
-        </>
-      )}
-
-      {view === ViewState.PRODUCTS && (
-        <>
-           {products.length === 0 ? ( <EmptyState icon={Package} title="Estoque vazio" description="Cadastre produtos." action={ <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="mt-4 bg-rose-600 text-white px-6 py-2 rounded-full font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2"> <Plus size={20} /> Adicionar Produto </button> } /> ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {products.map(product => ( <div key={product.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start"> <div className="flex gap-3"> <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden shrink-0"> {product.photoUrl ? ( <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" /> ) : ( <div className="w-full h-full flex items-center justify-center text-slate-300"><Package size={20} /></div> )} </div> <div> <h3 className="font-bold text-slate-800">{product.name}</h3> <p className="text-sm text-slate-500 mt-1 line-clamp-2">{product.description}</p> <div className="flex items-center gap-3 mt-2"> <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-medium flex items-center gap-1"> <Box size={12} /> {product.stock} un </span> <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-md font-bold flex items-center gap-1"> <DollarSign size={12} /> {product.price} </span> </div> </div> </div> <button onClick={() => handleDelete(product.id, 'product')} className="text-slate-300 hover:text-red-500 p-2"> <Trash2 size={18} /> </button> </div> ))}
-            </div>
-          )}
-          <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10"> <Plus size={24} /> </button>
-        </>
-      )}
-
-      {view === ViewState.TEAM && (
-        <>
-           {employees.length === 0 ? ( <EmptyState icon={Users} title="Sem equipe" description="Cadastre profissionais." action={ <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="mt-4 bg-rose-600 text-white px-6 py-2 rounded-full font-bold shadow-md hover:bg-rose-700 transition flex items-center gap-2"> <Plus size={20} /> Adicionar Membro </button> } /> ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {employees.map(emp => ( <div key={emp.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4"> <div className="w-16 h-16 rounded-full bg-slate-100 overflow-hidden shrink-0 border-2 border-white shadow-sm"> {emp.photoUrl ? ( <img src={emp.photoUrl} alt={emp.name} className="w-full h-full object-cover" /> ) : ( <User className="w-full h-full p-4 text-slate-400" /> )} </div> <div className="flex-1"> <h3 className="font-bold text-slate-800">{emp.name}</h3> <p className="text-xs text-rose-500 font-bold uppercase tracking-wider">{emp.role}</p> </div> <button onClick={() => handleDelete(emp.id, 'employee')} className="text-slate-300 hover:text-red-500 p-2"> <Trash2 size={18} /> </button> </div> ))}
-            </div>
-          )}
-           <button onClick={() => { setEditingItem({}); setIsModalOpen(true); }} className="fixed bottom-24 right-6 bg-rose-600 text-white p-4 rounded-full shadow-lg hover:bg-rose-700 transition z-10"> <Plus size={24} /> </button>
-        </>
-      )}
-
-      {view === ViewState.SETTINGS && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
-           <h3 className="font-bold text-lg text-slate-800 border-b pb-2 mb-4">Configurações do Salão</h3>
-           <div className="grid gap-4"> <div> <label className="block text-sm font-medium text-slate-700">Nome do Salão</label> <input type="text" className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border" value={settings.shopName} onChange={e => setSettings({ ...settings, shopName: e.target.value })} /> </div> <div> <label className="block text-sm font-medium text-slate-700">Endereço Público</label> <input type="text" className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border" value={settings.address} onChange={e => setSettings({ ...settings, address: e.target.value })} /> </div> <div> <label className="block text-sm font-medium text-slate-700">Telefone de Contato</label> <input type="tel" className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-rose-500 focus:ring-rose-500 p-2 border" value={settings.phone} onChange={e => setSettings({ ...settings, phone: e.target.value })} /> </div> </div>
-           <button onClick={() => { Storage.saveSettings(settings); alert('Salvo!'); }} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-900 transition mt-4"> Salvar Configurações </button>
-           
-           <div className="pt-6 border-t border-slate-100">
-                <button onClick={handleAdminLogout} className="w-full flex items-center justify-center gap-2 text-red-600 font-bold py-3 rounded-xl bg-red-50 hover:bg-red-100 transition">
-                     <LogOut size={20} /> Sair da Administração
-                </button>
-           </div>
-        </div>
-      )}
-
-      {/* --- MODALS --- */}
-      
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-scaleIn">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-slate-800">
-                  {view === ViewState.FINANCE && 'Nova Transação'}
-                  {view === ViewState.COUPONS && (editingItem?.id ? 'Editar Cupom' : 'Novo Cupom')}
-                  {view === ViewState.SERVICES && (editingItem?.id ? 'Editar Serviço' : 'Novo Serviço')}
-                  {view === ViewState.PRODUCTS && (editingItem?.id ? 'Editar Produto' : 'Novo Produto')}
-                  {view === ViewState.TEAM && (editingItem?.id ? 'Editar Profissional' : 'Novo Profissional')}
-                  {view === ViewState.SAAS_PLANS && (editingItem?.id ? 'Editar Plano' : 'Novo Plano SaaS')}
-                </h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"> <X size={24} /> </button>
-              </div>
-              
-              {view === ViewState.SERVICES && renderServiceForm()}
-              {view === ViewState.PRODUCTS && renderProductForm()}
-              {view === ViewState.TEAM && renderEmployeeForm()}
-              
-              {/* Transaction Form */}
-              {view === ViewState.FINANCE && (
-                   <form onSubmit={handleSaveTransaction} className="space-y-4">
-                       <div> <label className="block text-sm font-medium text-slate-700">Descrição</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.title || ''} onChange={e => setEditingItem({...editingItem as Transaction, title: e.target.value})} /> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Valor</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.amount || ''} onChange={e => setEditingItem({...editingItem as Transaction, amount: parseFloat(e.target.value)})} /> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.type || 'expense'} onChange={e => setEditingItem({...editingItem as Transaction, type: e.target.value as any})}> <option value="expense">Despesa</option> <option value="income">Receita</option> </select> </div>
-                       <div> <label className="block text-sm font-medium text-slate-700">Status</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Transaction)?.status || 'paid'} onChange={e => setEditingItem({...editingItem as Transaction, status: e.target.value as any})}> <option value="paid">Pago / Recebido</option> <option value="pending">Pendente / A Receber</option> </select> </div>
-                       <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar</button>
-                   </form>
-              )}
-              {/* Coupon Form */}
-              {view === ViewState.COUPONS && (
-                   <form onSubmit={handleSaveCoupon} className="space-y-4">
-                       <div> <label className="block text-sm font-medium text-slate-700">Código do Cupom</label> <input type="text" required className="mt-1 block w-full p-2 border rounded-md uppercase" placeholder="Ex: BEMVINDO10" value={(editingItem as Coupon)?.code || ''} onChange={e => setEditingItem({...editingItem as Coupon, code: e.target.value})} /> </div>
-                       <div className="grid grid-cols-2 gap-4">
-                           <div> <label className="block text-sm font-medium text-slate-700">Tipo</label> <select className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.type || 'fixed'} onChange={e => setEditingItem({...editingItem as Coupon, type: e.target.value as any})}> <option value="fixed">Fixo (R$)</option> <option value="percent">Porcentagem (%)</option> </select> </div>
-                           <div> <label className="block text-sm font-medium text-slate-700">Valor Desconto</label> <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as Coupon)?.discount || ''} onChange={e => setEditingItem({...editingItem as Coupon, discount: parseFloat(e.target.value)})} /> </div>
-                       </div>
-                       <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar Cupom</button>
-                   </form>
-              )}
-              {/* SaaS Plan Form */}
-              {view === ViewState.SAAS_PLANS && (
-                  <form onSubmit={handleSavePlan} className="space-y-4">
-                      <div>
-                          <label className="block text-sm font-medium text-slate-700">Nome do Plano</label>
-                          <input type="text" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as any)?.name || ''} onChange={e => setEditingItem({...editingItem, name: e.target.value} as any)} />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-slate-700">Preço Mensal (R$)</label>
-                          <input type="number" required className="mt-1 block w-full p-2 border rounded-md" value={(editingItem as any)?.price || ''} onChange={e => setEditingItem({...editingItem, price: parseFloat(e.target.value)} as any)} />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-slate-700">Benefícios (separados por vírgula)</label>
-                          <textarea className="mt-1 block w-full p-2 border rounded-md" rows={4} value={(editingItem as any)?.features || ''} onChange={e => setEditingItem({...editingItem, features: e.target.value} as any)} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                          <input type="checkbox" id="isRecommended" checked={(editingItem as any)?.isRecommended || false} onChange={e => setEditingItem({...editingItem, isRecommended: e.target.checked} as any)} />
-                          <label htmlFor="isRecommended" className="text-sm font-medium text-slate-700">Marcar como Recomendado</label>
-                      </div>
-                      <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-lg font-bold">Salvar Plano</button>
-                  </form>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isLoginModalOpen && (
-         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-scaleIn p-8 text-center">
-               <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4"> <LogIn size={32} /> </div>
-               <h3 className="text-2xl font-bold text-slate-800 mb-2">Área do Parceiro</h3>
-               <form onSubmit={(e) => { e.preventDefault(); handleAdminLogin(); }}> <input type="email" placeholder="E-mail" className="w-full p-3 border border-slate-200 rounded-xl mb-3" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} /> <input type="password" placeholder="Senha" className="w-full p-3 border border-slate-200 rounded-xl mb-6" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} /> <button type="submit" className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold">Entrar</button> </form>
-               <div className="mt-6 pt-4 border-t border-slate-100"> <button onClick={fillDemoLogin} className="w-full py-2 border border-dashed border-slate-300 rounded-lg text-xs font-bold text-slate-500 flex items-center justify-center gap-2"> <KeyRound size={14} /> Usar Credenciais de Teste </button> </div>
-               <button onClick={() => setIsLoginModalOpen(false)} className="mt-4 text-sm text-slate-400 hover:text-slate-600">Cancelar</button>
-            </div>
-         </div>
-      )}
-
-      {appointmentToCancel && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-           <div className="bg-white rounded-2xl w-full max-w-xs p-6 text-center shadow-xl animate-scaleIn">
-              <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"> <AlertCircle size={24} /> </div>
-              <h3 className="font-bold text-lg text-slate-800 mb-2">Cancelar Agendamento?</h3>
-              <p className="text-sm text-slate-500 mb-6">Esta ação não pode ser desfeita.</p>
-              <div className="flex gap-3"> <button onClick={() => setAppointmentToCancel(null)} className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg">Voltar</button> <button onClick={confirmCancellation} className="flex-1 py-2 bg-red-600 text-white font-bold rounded-lg shadow-md">Sim, Cancelar</button> </div>
-           </div>
-        </div>
-      )}
-
+      {renderContent()}
     </Layout>
   );
 };

@@ -110,6 +110,8 @@ export interface Tenant {
   plan: string; // Changed to string to match dynamic plan names
   status: 'active' | 'churned';
   mrr: number; // Monthly Recurring Revenue from this tenant
+  city: string; // New: For geographic analytics
+  state: string; // New: For geographic analytics
   createdAt: number;
 }
 

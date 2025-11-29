@@ -83,10 +83,10 @@ export const MOCK_PLATFORM_SALONS: SalonMetadata[] = [
 // --- SAAS TENANT MOCK DATA ---
 const getMockTenants = (): Tenant[] => {
   return [
-    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'Pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 100000000 },
-    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'Enterprise', status: 'active', mrr: 199.00, createdAt: Date.now() - 50000000 },
-    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'Start', status: 'active', mrr: 0, createdAt: Date.now() - 20000000 },
-    { id: '4', slug: 'corte-kids', ownerName: 'Pedro Santos', email: 'pedro@kids.com', plan: 'Pro', status: 'active', mrr: 99.00, createdAt: Date.now() - 10000000 }
+    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'Pro', status: 'active', mrr: 99.00, city: 'São Paulo', state: 'SP', createdAt: Date.now() - 100000000 },
+    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'Enterprise', status: 'active', mrr: 199.00, city: 'Rio de Janeiro', state: 'RJ', createdAt: Date.now() - 50000000 },
+    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'Start', status: 'active', mrr: 0, city: 'Belo Horizonte', state: 'MG', createdAt: Date.now() - 20000000 },
+    { id: '4', slug: 'corte-kids', ownerName: 'Pedro Santos', email: 'pedro@kids.com', plan: 'Pro', status: 'active', mrr: 99.00, city: 'Curitiba', state: 'PR', createdAt: Date.now() - 10000000 }
   ];
 };
 
