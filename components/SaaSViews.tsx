@@ -165,9 +165,9 @@ export const SaaS_LP: React.FC<SaaS_LP_Props> = ({ setView, setShowAdminLogin, s
                                           + R$ {plan.pricePerUser} <span className="text-slate-400 font-normal">por profissional</span>
                                       </p>
                                   )}
-                                  {plan.minUsers && plan.minUsers > 0 ? (
+                                  {plan.minUsers !== undefined && plan.minUsers > 0 ? (
                                       <p className="text-[10px] bg-slate-200 text-slate-600 inline-block px-2 py-1 rounded-full mt-2 font-bold uppercase tracking-wide">
-                                          Acima de {plan.minUsers - 1} profissionais
+                                          Inclui {plan.minUsers} profissional(is)
                                       </p>
                                   ) : null}
                               </div>
@@ -274,6 +274,8 @@ export const SaaSAdmin: React.FC<SaaSAdminProps> = ({
         return acc;
     }, {});
 
+    const currentPlanIsFree = planForm.basePrice === 0 || planForm.name === 'Start';
+
     return (
         <div className="pb-24">
             <header className="bg-rose-600 text-white pt-6 pb-6 px-6 sticky top-0 z-30 shadow-lg shadow-rose-200">
@@ -364,6 +366,21 @@ export const SaaSAdmin: React.FC<SaaSAdminProps> = ({
                                     <div className="space-y-1"><label className="text-xs font-bold text-slate-400 ml-1">Por Profissional (R$)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="10.00" value={planForm.pricePerUser || ''} onChange={e=>setPlanForm({...planForm, pricePerUser: Number(e.target.value)})}/></div>
                                 </div>
                                 <div className="space-y-1"><label className="text-xs font-bold text-slate-400 ml-1">Mínimo de Profissionais (Gatilho)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="0 (Todos) ou 11 (Só grandes)" value={planForm.minUsers || 0} onChange={e=>setPlanForm({...planForm, minUsers: Number(e.target.value)})}/></div>
+                                
+                                {currentPlanIsFree && (
+                                    <div className="space-y-1 bg-amber-50 p-3 rounded-xl border border-amber-100">
+                                        <label className="text-xs font-bold text-amber-700 ml-1">Limite de Ações (Plano Start)</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-3 bg-amber-100 rounded-xl text-amber-800 font-medium" 
+                                            placeholder="Ex: 30" 
+                                            value={planForm.actionLimit || ''} 
+                                            onChange={e => setPlanForm({...planForm, actionLimit: Number(e.target.value)})}
+                                        />
+                                        <p className="text-xs text-amber-600 mt-1">Número total de agendamentos e transações permitidas no plano gratuito.</p>
+                                    </div>
+                                )}
+
                                 <div className="space-y-2">
                                     <p className="text-xs font-bold text-slate-400">Benefícios:</p>
                                     {planForm.features?.map((feat, idx) => (
@@ -380,7 +397,10 @@ export const SaaSAdmin: React.FC<SaaSAdminProps> = ({
                                         <div>
                                             <h4 className="font-bold text-slate-800">{plan.name}</h4>
                                             <p className="text-sm font-black text-rose-600">R$ {plan.basePrice} <span className="text-slate-400 font-medium text-xs">+ R$ {plan.pricePerUser}/prof</span></p>
-                                            <p className="text-[10px] text-slate-400 mt-1">{plan.minUsers && plan.minUsers > 0 ? `Mínimo de ${plan.minUsers} profissionais` : 'Para qualquer tamanho'}</p>
+                                            {plan.actionLimit !== undefined && plan.basePrice === 0 && (
+                                                <p className="text-[10px] text-amber-600 mt-1 font-bold">Limite de {plan.actionLimit} ações</p>
+                                            )}
+                                            <p className="text-[10px] text-slate-400 mt-1">{plan.minUsers && plan.minUsers > 0 ? `Inclui ${plan.minUsers} profissional(is)` : 'Para qualquer tamanho'}</p>
                                         </div>
                                         <div className="flex gap-2">
                                             <button onClick={() => { setPlanForm(plan); setEditingPlanId(plan.id); setIsEditingPlan(true); }} className="p-2 bg-slate-50 text-slate-600 rounded-lg"><Edit2 size={16}/></button>

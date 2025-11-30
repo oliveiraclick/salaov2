@@ -6,8 +6,8 @@ import { SaaS_LP, Marketplace, SaaSAdmin } from './components/SaaSViews'; // Imp
 import { ViewState, SalonMetadata, Service, Appointment, Product, Transaction, Employee, Client, ShopSettings, Tenant, SaasPlan } from './types';
 import { getPlatformSalons, setCurrentNamespace, getCurrentNamespace, fetchSettings, fetchServices, fetchEmployees, persistAppointments, fetchAppointments, fetchProducts, addTransaction, fetchClients, persistClient, fetchTransactions, persistServices, persistProducts, persistEmployees, persistSettings, incrementViews, fetchTenants, fetchSaasPlans, persistSaasPlans } from './services/storage';
 import { sendFinancialWebhook, saveIntegrationConfig, getIntegrationConfig } from './services/webhook';
-import { generateDescription, getLocationContext } from './services/gemini';
-import { Calendar, LayoutDashboard, Scissors, Store, Users, Wallet, Settings, Package, Percent, MapPin, Phone, Star, Share2, Lock, ArrowLeft, Clock, Search, ChevronRight, Check, Globe, Zap, Heart, CheckCircle2, X, User, Plus, Minus, Trash2, ShoppingBag, DollarSign, CalendarDays, History, AlertCircle, LogOut, TrendingUp, TrendingDown, Edit2, Camera, Save, BarChart3, Shield, Map, CreditCard, Tag, LayoutGrid, ArrowRight, Smartphone, Play, Loader2, Link } from 'lucide-react';
+import { getLocationContext } from './services/gemini';
+import { Calendar, LayoutDashboard, Scissors, Store, Users, Wallet, Settings, Package, Percent, MapPin, Phone, Star, Share2, Lock, ArrowLeft, Clock, Search, ChevronRight, Check, Globe, Zap, Heart, CheckCircle2, X, User, Plus, Minus, Trash2, ShoppingBag, DollarSign, CalendarDays, History, AlertCircle, LogOut, TrendingUp, TrendingDown, Edit2, Camera, Save, BarChart3, Shield, Map as MapIcon, CreditCard, Tag, LayoutGrid, ArrowRight, Smartphone, Play, Loader2, Link } from 'lucide-react'; // Added DollarSign and AlertCircle, aliased Map to MapIcon
 
 // Helper interface for local cart state
 interface CartItem {
@@ -121,13 +121,19 @@ const App: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [saasPlans, setSaasPlans] = useState<SaasPlan[]>([]);
   const [randomSalons, setRandomSalons] = useState<SalonMetadata[]>([]);
+  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(null); // New state for current tenant
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false); // New state for upgrade modal
+
+  // New states for employee flow
+  const [showAddMoreEmployeesModal, setShowAddMoreEmployeesModal] = useState(false);
+  const [showPaymentPromptModal, setShowPaymentPromptModal] = useState(false);
 
   // --- ASYNC DATA LOADING ---
   const refreshData = async () => {
     const [
-      s_services, s_products, s_employees, s_appointments, s_clients, s_transactions, s_settings
+      s_services, s_products, s_employees, s_appointments, s_clients, s_transactions, s_settings, s_tenants, s_saasPlans
     ] = await Promise.all([
-      fetchServices(), fetchProducts(), fetchEmployees(), fetchAppointments(), fetchClients(), fetchTransactions(), fetchSettings()
+      fetchServices(), fetchProducts(), fetchEmployees(), fetchAppointments(), fetchClients(), fetchTransactions(), fetchSettings(), fetchTenants(), fetchSaasPlans()
     ]);
 
     setServices(s_services);
@@ -139,6 +145,11 @@ const App: React.FC = () => {
     setCurrentSettings(s_settings);
     setSettingsForm(s_settings);
     setSalonName(s_settings.shopName);
+    setTenants(s_tenants);
+    setSaasPlans(s_saasPlans);
+
+    const activeTenant = s_tenants.find(t => t.slug === getCurrentNamespace());
+    setCurrentTenant(activeTenant || null);
     
     // Load integration config
     const integ = getIntegrationConfig();
@@ -185,7 +196,7 @@ const App: React.FC = () => {
       if (view !== ViewState.SAAS_LP && view !== ViewState.MARKETPLACE) {
           refreshData();
       }
-  }, [view, isEditingService, isEditingProduct, isEditingEmployee, isAddingTransaction, checkoutAppointment]);
+  }, [view, isEditingService, isEditingProduct, isEditingEmployee, isAddingTransaction, checkoutAppointment, showUpgradeModal, showAddMoreEmployeesModal, showPaymentPromptModal]); // Add new modal states to dependencies
 
   // Load Location Context with Gemini Maps
   useEffect(() => {
@@ -297,7 +308,7 @@ const App: React.FC = () => {
           const updatedApps = appointments.map(app => 
               app.id === appointmentId ? { ...app, status: 'cancelled' as const } : app
           );
-          await persistAppointments(updatedApps);
+          await persistAppointments(updatedApps); // This now returns boolean, but we don't need to check for cancellation
           await refreshData();
       }
   };
@@ -396,7 +407,14 @@ const App: React.FC = () => {
     };
 
     const currentApps = await fetchAppointments();
-    await persistAppointments([...currentApps, newAppointment]);
+    const actionAllowed = await persistAppointments([...currentApps, newAppointment]);
+    
+    if (!actionAllowed) {
+        closeBookingModal();
+        setShowUpgradeModal(true);
+        return;
+    }
+
     await refreshData();
     setBookingStep(6); 
   };
@@ -429,6 +447,7 @@ const App: React.FC = () => {
   const finalizeCheckout = async () => {
       if (!checkoutAppointment) return;
       const currentApps = await fetchAppointments();
+      
       const updatedApps = currentApps.map(app => {
           if (app.id === checkoutAppointment.id) {
               const newProducts: Product[] = [];
@@ -455,15 +474,22 @@ const App: React.FC = () => {
                   date: new Date().toISOString().split('T')[0],
                   relatedAppointmentId: app.id
               };
-              addTransaction(transaction); // Sync call but storage handles it async internally for Supabase
-
-              // Etapa 2: Gatilho de Receita
-              sendFinancialWebhook({
-                type: 'RECEITA',
-                category: 'Serviços Personalizados', // Categoria Estrita
-                amount: transaction.amount,
-                date: new Date().toISOString(),
-                description: richDescription
+              
+              // Call addTransaction and check if allowed
+              addTransaction(transaction).then(actionAllowed => {
+                  if (!actionAllowed) {
+                      closeCheckoutModal();
+                      setShowUpgradeModal(true);
+                      return;
+                  }
+                  // If allowed, send webhook
+                  sendFinancialWebhook({
+                    type: 'RECEITA',
+                    category: 'Serviços Personalizados', // Categoria Estrita
+                    amount: transaction.amount,
+                    date: new Date().toISOString(),
+                    description: richDescription
+                  });
               });
               return updatedApp;
           }
@@ -539,9 +565,15 @@ const App: React.FC = () => {
           ? employees.map(e => e.id === editingEmployeeId ? newEmp : e)
           : [...employees, newEmp];
       await persistEmployees(updated);
-      setIsEditingEmployee(false);
-      setEmployeeForm({});
-      setEditingEmployeeId(null);
+      
+      // Refresh data to get the updated employees list and current tenant info
+      await refreshData(); 
+
+      // After saving, prompt to add more
+      setIsEditingEmployee(true); // Keep editing state open
+      setEmployeeForm({}); // Clear form for next employee
+      setEditingEmployeeId(null); // Reset editing ID
+      setShowAddMoreEmployeesModal(true); // Show the "add more" modal
   };
 
   const handleDeleteEmployee = async (id: string) => {
@@ -562,7 +594,13 @@ const App: React.FC = () => {
           status: 'paid',
           date: transactionForm.date || new Date().toISOString().split('T')[0]
       };
-      await addTransaction(newTrans);
+      
+      const actionAllowed = await addTransaction(newTrans);
+      if (!actionAllowed) {
+          setIsAddingTransaction(false);
+          setShowUpgradeModal(true);
+          return;
+      }
       
       const richCategory = transactionForm.category || 'Outros';
       const richDescription = `[${richCategory}] ${transactionForm.title}`;
@@ -602,7 +640,8 @@ const App: React.FC = () => {
           pricePerUser: Number(planForm.pricePerUser),
           minUsers: Number(planForm.minUsers),
           features: planForm.features || [],
-          isRecommended: planForm.isRecommended || false
+          isRecommended: planForm.isRecommended || false,
+          actionLimit: planForm.actionLimit // Include actionLimit
       };
       const updated = editingPlanId
           ? saasPlans.map(p => p.id === editingPlanId ? newPlan : p)
@@ -631,6 +670,19 @@ const App: React.FC = () => {
       setPlanForm(prev => ({ ...prev, features: (prev.features || []).filter((_, i) => i !== idx) }));
   };
 
+  // Helper to check and show payment prompt AFTER employee operations
+  const checkAndShowPaymentPrompt = () => {
+    if (currentTenant && currentTenant.plan) {
+        const tenantPlan = saasPlans.find(p => p.name === currentTenant.plan);
+        if (tenantPlan && tenantPlan.basePrice && tenantPlan.basePrice > 0) { // Check if it's a PAID plan
+            const currentEmployeeCount = employees.length;
+            const minUsers = tenantPlan.minUsers || 0;
+            if (currentEmployeeCount > minUsers) {
+                setShowPaymentPromptModal(true);
+            }
+        }
+    }
+  };
 
   // --- UI RENDER FUNCTIONS ---
 
@@ -946,7 +998,7 @@ const App: React.FC = () => {
                        <Phone size={14}/> WhatsApp
                    </button>
                    <button onClick={openMaps} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
-                       <Map size={14}/> Mapa
+                       <MapIcon size={14}/> Mapa
                    </button>
                    <button onClick={handleShare} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold">
                        <Share2 size={14}/>
@@ -1156,8 +1208,8 @@ const App: React.FC = () => {
         
         {/* Booking Modal Logic (Simplified for space, assuming 6 steps or similar) */}
         {selectedServiceForBooking && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white w-full sm:max-w-md p-6 rounded-t-[2rem] sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white w-full sm:max-w-md p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
                     {bookingStep === 1 && (
                         <div>
                              <h3 className="text-lg font-bold text-slate-800 mb-4">Escolha o Profissional</h3>
@@ -1285,7 +1337,7 @@ const App: React.FC = () => {
                                      <div className="flex items-center gap-2">
                                          {qty > 0 && <button onClick={() => updateCheckoutQuantity(p, -1)} className="text-slate-400 hover:text-red-500"><Minus size={16}/></button>}
                                          <span className="text-xs font-bold w-4 text-center">{qty > 0 ? qty : '-'}</span>
-                                         <button onClick={() => updateCheckoutQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
+                                         <button onClick={() => updateBookingQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
                                      </div>
                                  </div>
                              );
@@ -1303,6 +1355,103 @@ const App: React.FC = () => {
                      <button onClick={closeCheckoutModal} className="w-full py-3 text-slate-400 font-bold text-sm">Cancelar</button>
                  </div>
              </div>
+        )}
+
+        {/* Upgrade Modal */}
+        {showUpgradeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-xs text-center shadow-2xl transform transition-all scale-100">
+                    <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle size={32}/>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-2">Limite de Ações Atingido!</h3>
+                    <p className="text-sm text-slate-500 mb-6">Você atingiu o limite de ações do seu plano atual. Para continuar usando todos os recursos, por favor, faça upgrade para um plano pago.</p>
+                    <button onClick={() => { setShowUpgradeModal(false); setView(ViewState.SAAS_LP); }} className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-200">
+                        Ver Planos
+                    </button>
+                    <button onClick={() => setShowUpgradeModal(false)} className="w-full mt-2 py-3 text-slate-500 font-bold text-sm">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* Add More Employees Modal */}
+        {showAddMoreEmployeesModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100 text-center">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4">Funcionário Adicionado!</h3>
+                    <p className="text-sm text-slate-500 mb-6">Deseja adicionar mais funcionários?</p>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => {
+                                setShowAddMoreEmployeesModal(false);
+                                // The form is already reset and open for new input
+                                // isEditingEmployee remains true
+                            }} 
+                            className="flex-1 py-3 text-emerald-600 font-bold text-sm bg-emerald-50 rounded-xl"
+                        >
+                            Sim
+                        </button>
+                        <button 
+                            onClick={() => {
+                                setShowAddMoreEmployeesModal(false);
+                                setIsEditingEmployee(false); // Close the employee form
+                                checkAndShowPaymentPrompt(); // Trigger payment prompt check
+                            }} 
+                            className="flex-1 py-3 text-slate-500 font-bold text-sm bg-slate-100 rounded-xl"
+                        >
+                            Não
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Payment Prompt Modal for Additional Employees */}
+        {showPaymentPromptModal && currentTenant && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100 text-center">
+                    <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <DollarSign size={32}/>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-4">Atenção ao Seu Plano!</h3>
+                    {(() => {
+                        const tenantPlan = saasPlans.find(p => p.name === currentTenant.plan);
+                        if (!tenantPlan) {
+                            return <p className="text-sm text-slate-500 mb-6">Não foi possível encontrar os detalhes do seu plano.</p>;
+                        }
+
+                        const currentEmployeeCount = employees.length;
+                        const minUsers = tenantPlan.minUsers || 0;
+                        const pricePerUser = tenantPlan.pricePerUser || 0;
+
+                        if (currentEmployeeCount > minUsers) {
+                            const extraEmployees = currentEmployeeCount - minUsers;
+                            const additionalCost = extraEmployees * pricePerUser;
+                            return (
+                                <>
+                                    <p className="text-sm text-slate-500 mb-3">
+                                        Seu plano "{currentTenant.plan}" inclui até <span className="font-bold">{minUsers}</span> funcionário(s).
+                                        Atualmente, você tem <span className="font-bold">{currentEmployeeCount}</span> funcionário(s) cadastrado(s), excedendo o limite em <span className="font-bold">{extraEmployees}</span>.
+                                    </p>
+                                    <p className="text-sm font-bold text-rose-600 mb-6">
+                                        Isso gerará um custo adicional de R$ {additionalCost.toFixed(2)}/mês.
+                                    </p>
+                                    <p className="text-xs text-slate-400">Entre em contato para ajustar seu plano.</p>
+                                </>
+                            );
+                        }
+                        return <p className="text-sm text-slate-500 mb-6">Seu plano "{currentTenant.plan}" está em ordem com <span className="font-bold">{currentEmployeeCount}</span> funcionário(s).</p>;
+                    })()}
+                    <button 
+                        onClick={() => setShowPaymentPromptModal(false)} 
+                        className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-200 mt-4"
+                    >
+                        Entendi
+                    </button>
+                </div>
+            </div>
         )}
     </Layout>
   );

@@ -113,6 +113,7 @@ export interface Tenant {
   city: string; // New: For geographic analytics
   state: string; // New: For geographic analytics
   createdAt: number;
+  actionCount?: number; // New: Track actions for free plan
 }
 
 // SaaS Plan Interface
@@ -126,6 +127,7 @@ export interface SaasPlan {
   minUsers?: number; // Gatilho: só vale a partir de X funcionários
   features: string[];
   isRecommended: boolean;
+  actionLimit?: number; // New: Action limit for free plans
 }
 
 export enum ViewState {

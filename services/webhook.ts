@@ -21,7 +21,7 @@ export const saveIntegrationConfig = (config: { endpoint: string, apiKey: string
 export interface FinancialPayload {
   projectId: string;
   type: 'RECEITA' | 'DESPESA';
-  category: string;
+  category: 'Servidores e Infra' | 'Domínios e SSL' | 'Desenvolvimento e Design' | 'Marketing e Anúncios' | 'Licenças de Software' | 'Assinaturas' | 'Venda Vitalícia (LTD)' | 'Serviços Personalizados' | 'Outros';
   amount: number;
   date: string; // ISO 8601
   description: string;

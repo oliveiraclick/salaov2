@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ViewState } from '../types';
 import { Scissors, Package, Settings, Users, Store, LayoutDashboard, LogIn, Wallet, Calendar, ShoppingBag } from 'lucide-react';

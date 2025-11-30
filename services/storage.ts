@@ -41,7 +41,7 @@ const safeParse = <T>(data: string | null, fallback: T): T => {
 };
 
 // --- PLATFORM MOCK DATA (MARKETPLACE) ---
-// Note: In a full Supabase implementation, these would come from the 'tenants' table
+// Note: In a real scenario, we would fetch from 'tenants' table and map to metadata
 export const MOCK_PLATFORM_SALONS: SalonMetadata[] = [
   {
     id: '1',
@@ -111,9 +111,9 @@ const getMockEmployees = (type: string): Employee[] => {
 
 const getMockTenants = (): Tenant[] => {
   return [
-    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'Pro', status: 'active', mrr: 99.00, city: 'São Paulo', state: 'SP', createdAt: Date.now() },
-    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'Enterprise', status: 'active', mrr: 199.00, city: 'Rio de Janeiro', state: 'RJ', createdAt: Date.now() },
-    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'Start', status: 'active', mrr: 0, city: 'Belo Horizonte', state: 'MG', createdAt: Date.now() }
+    { id: '1', slug: 'barbearia-vintage', ownerName: 'João Silva', email: 'joao@vintage.com', plan: 'Pro', status: 'active', mrr: 99.00, city: 'São Paulo', state: 'SP', createdAt: Date.now(), actionCount: 0 },
+    { id: '2', slug: 'studio-divas', ownerName: 'Ana Souza', email: 'ana@divas.com', plan: 'Enterprise', status: 'active', mrr: 199.00, city: 'Rio de Janeiro', state: 'RJ', createdAt: Date.now(), actionCount: 0 },
+    { id: '3', slug: 'esmalteria-colors', ownerName: 'Maria Oliveira', email: 'maria@colors.com', plan: 'Start', status: 'active', mrr: 0, city: 'Belo Horizonte', state: 'MG', createdAt: Date.now(), actionCount: 29 } // Mock with 29 actions for testing
   ];
 };
 
@@ -127,7 +127,8 @@ const getMockPlans = (): SaasPlan[] => {
       pricePerUser: 0,
       minUsers: 0,
       features: ['Agenda Simples', 'Link Personalizado', 'Até 50 agendamentos/mês'], 
-      isRecommended: false 
+      isRecommended: false,
+      actionLimit: 30 // Dynamic limit for 'Start' plan
     },
     { 
       id: '2', 
@@ -135,7 +136,7 @@ const getMockPlans = (): SaasPlan[] => {
       price: 29.90, 
       basePrice: 29.90,
       pricePerUser: 10.00,
-      minUsers: 0, // Até 10 funcionários
+      minUsers: 1, // Changed from 0 to 1: Includes first employee
       features: ['Agenda Ilimitada', 'Controle Financeiro', 'Gestão de Estoque', 'Site Próprio'], 
       isRecommended: true 
     },
@@ -299,7 +300,10 @@ export const fetchAppointments = async (): Promise<Appointment[]> => {
   return safeParse<Appointment[]>(data, []);
 };
 
-export const persistAppointments = async (appointments: Appointment[]) => {
+export const persistAppointments = async (appointments: Appointment[]): Promise<boolean> => {
+  const allowAction = await _checkAndIncrementTenantActionCount('appointment');
+  if (!allowAction) return false;
+
   localStorage.setItem(getKey(KEYS.APPOINTMENTS), JSON.stringify(appointments));
   if (isSupabaseConfigured() && supabase) {
       // Save last appointment
@@ -323,9 +327,15 @@ export const persistAppointments = async (appointments: Appointment[]) => {
           });
       }
   }
+  return true;
 };
 
 export const fetchSettings = async (): Promise<ShopSettings> => {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('settings').select('*').eq('salon_slug', currentNamespace).single();
+    if (data) return data;
+  }
+
   const key = getKey(KEYS.SETTINGS);
   const data = localStorage.getItem(key);
   const parsed = safeParse<ShopSettings | null>(data, null);
@@ -348,12 +358,25 @@ export const fetchSettings = async (): Promise<ShopSettings> => {
 
 export const persistSettings = async (settings: ShopSettings) => {
   localStorage.setItem(getKey(KEYS.SETTINGS), JSON.stringify(settings));
+  if (isSupabaseConfigured() && supabase) {
+    await supabase.from('settings').upsert({
+      salon_slug: currentNamespace,
+      shopName: settings.shopName,
+      address: settings.address,
+      phone: settings.phone,
+      slotDuration: settings.slotDuration,
+      openTime: settings.openTime,
+      closeTime: settings.closeTime,
+      currency: settings.currency,
+      views: settings.views
+    });
+  }
 };
 
 export const incrementViews = async (): Promise<number> => {
   const settings = await fetchSettings();
   settings.views = (settings.views || 0) + 1;
-  persistSettings(settings);
+  persistSettings(settings); // This will also update Supabase
   return settings.views;
 };
 
@@ -424,7 +447,10 @@ export const persistTransactions = async (transactions: Transaction[]) => {
   localStorage.setItem(getKey(KEYS.TRANSACTIONS), JSON.stringify(transactions));
 };
 
-export const addTransaction = async (transaction: Transaction) => {
+export const addTransaction = async (transaction: Transaction): Promise<boolean> => {
+  const allowAction = await _checkAndIncrementTenantActionCount('transaction');
+  if (!allowAction) return false;
+
   const list = await fetchTransactions();
   list.push(transaction);
   persistTransactions(list);
@@ -440,6 +466,7 @@ export const addTransaction = async (transaction: Transaction) => {
           status: transaction.status
       });
   }
+  return true;
 };
 
 // --- SAAS ASYNC ---
@@ -450,7 +477,8 @@ export const fetchTenants = async (): Promise<Tenant[]> => {
       if (data) return data.map(d => ({
           ...d,
           ownerName: d.owner_name,
-          createdAt: new Date(d.created_at).getTime()
+          createdAt: new Date(d.created_at).getTime(),
+          actionCount: d.action_count || 0 // Initialize actionCount from DB
       }));
   }
   const data = localStorage.getItem(SAAS_KEYS.TENANTS);
@@ -464,6 +492,23 @@ export const fetchTenants = async (): Promise<Tenant[]> => {
 
 export const persistTenants = async (tenants: Tenant[]) => {
     localStorage.setItem(SAAS_KEYS.TENANTS, JSON.stringify(tenants));
+    
+    if (isSupabaseConfigured() && supabase) {
+        for (const t of tenants) {
+            await supabase.from('tenants').upsert({
+                id: t.id.length < 10 ? undefined : t.id,
+                slug: t.slug,
+                owner_name: t.ownerName,
+                email: t.email,
+                plan: t.plan,
+                status: t.status,
+                mrr: t.mrr,
+                city: t.city,
+                state: t.state,
+                action_count: t.actionCount // Persist actionCount to DB
+            });
+        }
+    }
 };
 
 export const fetchSaasPlans = async (): Promise<SaasPlan[]> => {
@@ -477,7 +522,8 @@ export const fetchSaasPlans = async (): Promise<SaasPlan[]> => {
           pricePerUser: p.price_per_user,
           minUsers: p.min_users,
           features: p.features,
-          isRecommended: p.is_recommended
+          isRecommended: p.is_recommended,
+          actionLimit: p.action_limit // Map action_limit from Supabase
       }));
   }
 
@@ -503,8 +549,48 @@ export const persistSaasPlans = async (plans: SaasPlan[]) => {
               price_per_user: p.pricePerUser || 0,
               min_users: p.minUsers || 0,
               features: p.features,
-              is_recommended: p.isRecommended
+              is_recommended: p.isRecommended,
+              action_limit: p.actionLimit // Persist actionLimit to Supabase
           });
       }
   }
+};
+
+/**
+ * Internal helper to check and increment tenant action count for 'Start' plan.
+ * Returns true if action is allowed, false if limit reached.
+ */
+const _checkAndIncrementTenantActionCount = async (actionType: 'appointment' | 'transaction'): Promise<boolean> => {
+  const currentTenants = await fetchTenants();
+  const currentPlans = await fetchSaasPlans();
+  const currentSlug = getCurrentNamespace();
+
+  const tenantIndex = currentTenants.findIndex(t => t.slug === currentSlug);
+  if (tenantIndex === -1) {
+    console.warn(`Tenant with slug ${currentSlug} not found. Action allowed.`);
+    return true; // If tenant not found, allow action (shouldn't happen in normal flow)
+  }
+
+  const tenant = currentTenants[tenantIndex];
+  const plan = currentPlans.find(p => p.name === tenant.plan);
+
+  // Default to a high limit if plan or actionLimit is not defined (e.g., for paid plans)
+  const ACTION_LIMIT = plan?.actionLimit !== undefined ? plan.actionLimit : Infinity; 
+
+  // Check only if it's a free plan or a plan with an explicit actionLimit
+  const isLimitedPlan = plan?.basePrice === 0 || (plan?.actionLimit !== undefined && plan.actionLimit > 0);
+
+  if (isLimitedPlan) {
+    if ((tenant.actionCount || 0) >= ACTION_LIMIT) {
+      console.warn(`Tenant ${tenant.slug} on plan '${tenant.plan}' hit action limit of ${ACTION_LIMIT} for ${actionType}.`);
+      return false; // Block action
+    } else {
+      tenant.actionCount = (tenant.actionCount || 0) + 1;
+      await persistTenants(currentTenants); // Persist updated tenants
+      console.log(`Tenant ${tenant.slug} action count: ${tenant.actionCount}/${ACTION_LIMIT} for plan '${tenant.plan}'`);
+      return true; // Allow action
+    }
+  }
+  
+  return true; // Not a limited plan, always allow action
 };
