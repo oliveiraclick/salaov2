@@ -334,13 +334,29 @@ export const incrementViews = async (): Promise<number> => {
 // --- CLIENT & FINANCIAL ASYNC ---
 
 export const fetchClients = async (): Promise<Client[]> => {
+  // SUPABASE INTEGRATION
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('clients').select('*').eq('salon_slug', currentNamespace);
+    if (data && data.length > 0) {
+      return data.map(c => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        birthDate: c.birth_date,
+        createdAt: new Date(c.created_at).getTime()
+      }));
+    }
+  }
+
+  // Fallback LocalStorage
   const key = getKey(KEYS.CLIENTS);
   const data = localStorage.getItem(key);
   return safeParse<Client[]>(data, []);
 };
 
 export const persistClient = async (client: Client) => {
-  const clients = await fetchClients();
+  // 1. Persistência Local (Cache Imediato)
+  const clients = await fetchClients(); 
   const index = clients.findIndex(c => c.phone === client.phone);
   if (index >= 0) {
     clients[index] = client;
@@ -348,6 +364,28 @@ export const persistClient = async (client: Client) => {
     clients.push(client);
   }
   localStorage.setItem(getKey(KEYS.CLIENTS), JSON.stringify(clients));
+
+  // 2. Persistência Supabase (Cloud)
+  if (isSupabaseConfigured() && supabase) {
+    // Tenta verificar se já existe um cliente com este telefone neste salão para pegar o ID real
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('salon_slug', currentNamespace)
+      .eq('phone', client.phone)
+      .maybeSingle();
+
+    const dbClient = {
+      id: existing ? existing.id : undefined, // Se existir, usa o ID para update. Se não, undefined gera um novo UUID
+      salon_slug: currentNamespace,
+      name: client.name,
+      phone: client.phone,
+      birth_date: client.birthDate
+    };
+
+    // Upsert: Insere ou Atualiza baseado no ID (se fornecido)
+    await supabase.from('clients').upsert(dbClient);
+  }
 };
 
 export const fetchTransactions = async (): Promise<Transaction[]> => {
@@ -407,6 +445,12 @@ export const persistTenants = async (tenants: Tenant[]) => {
 };
 
 export const fetchSaasPlans = async (): Promise<SaasPlan[]> => {
+  // SUPABASE INTEGRATION FOR PLANS
+  if (isSupabaseConfigured() && supabase) {
+      const { data } = await supabase.from('saas_plans').select('*');
+      if (data && data.length > 0) return data;
+  }
+
   const data = localStorage.getItem(SAAS_KEYS.PLANS);
   const parsed = safeParse<SaasPlan[] | null>(data, null);
   if (parsed) return parsed;
@@ -418,4 +462,18 @@ export const fetchSaasPlans = async (): Promise<SaasPlan[]> => {
 
 export const persistSaasPlans = async (plans: SaasPlan[]) => {
   localStorage.setItem(SAAS_KEYS.PLANS, JSON.stringify(plans));
+  
+  if (isSupabaseConfigured() && supabase) {
+      // Upsert plans to Supabase
+      // Assuming a 'saas_plans' table exists (if not, it needs to be created in SQL)
+      for (const p of plans) {
+          await supabase.from('saas_plans').upsert({
+              id: p.id.length < 10 ? undefined : p.id,
+              name: p.name,
+              price: p.price,
+              features: p.features,
+              is_recommended: p.isRecommended
+          });
+      }
+  }
 };
