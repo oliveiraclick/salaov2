@@ -35,19 +35,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, setView, salonNa
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-800 font-sans">
-      {/* Header - Show only if NOT SaaS LP and NOT Public Salon (Salon has its own immersive header) */}
-      {!isSaaS_LP && !isSalonView && (
+      {/* Header - Show only if NOT SaaS LP, NOT Public Salon, and NOT Marketplace (Marketplace has its own header now) */}
+      {!isSaaS_LP && !isSalonView && !isMarketplace && (
       <header className="bg-white shadow-sm sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
         <div>
-           {isMarketplace ? (
-             <h1 className="text-xl font-bold bg-gradient-to-r from-rose-500 to-purple-600 bg-clip-text text-transparent uppercase tracking-tight">
-              SALÃO ONLINE
-            </h1>
-           ) : (
-             <h1 className="text-xl font-bold text-slate-800 truncate max-w-[200px]">
-               {salonName || 'Painel Admin'}
-             </h1>
-           )}
+           <h1 className="text-xl font-bold text-slate-800 truncate max-w-[200px]">
+             {salonName || 'Painel Admin'}
+           </h1>
         </div>
         
         {!isPublicMode && currentView === ViewState.CLIENT_PREVIEW && (

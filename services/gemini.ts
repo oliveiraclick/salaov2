@@ -32,3 +32,39 @@ export const generateDescription = async (name: string, type: 'service' | 'produ
     return "Descrição indisponível no momento.";
   }
 };
+
+export const getLocationContext = async (address: string) => {
+  try {
+    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+    if (!apiKey) return { text: '', links: [] };
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Forneça um contexto curto (máximo 20 palavras) sobre a localização deste endereço: "${address}". Mencione pontos de referência próximos ou estacionamento. Em Português.`,
+      config: {
+        tools: [{ googleMaps: {} }],
+      },
+    });
+
+    const text = response.text || '';
+    const links: { title: string, uri: string }[] = [];
+    
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    
+    chunks.forEach((chunk: any) => {
+       if (chunk.web?.uri) {
+           links.push({ title: chunk.web.title || 'Web', uri: chunk.web.uri });
+       }
+       if (chunk.maps?.uri) {
+           links.push({ title: chunk.maps.title || 'Ver no Google Maps', uri: chunk.maps.uri });
+       }
+    });
+
+    return { text, links };
+  } catch (error) {
+    console.error("Gemini Location Error:", error);
+    return { text: '', links: [] };
+  }
+};

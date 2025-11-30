@@ -1,9 +1,22 @@
 
 // CONFIGURAÇÃO DE INTEGRAÇÃO - SAAS ADMIN PRO
-// Preencha estas variáveis quando tiver os dados do painel gerado.
-const WEBHOOK_ENDPOINT = ''; // Ex: https://api.saasadminpro.com/v1/events
-const PROJECT_API_KEY = '';  // Ex: sk_live_...
-const PROJECT_ID = '';       // Ex: proj_123456
+// As credenciais agora são lidas do LocalStorage (configuradas na aba Ajustes do App)
+
+const STORAGE_KEY_INTEGRATION = 'saas_integration_config';
+
+export const getIntegrationConfig = () => {
+  const data = localStorage.getItem(STORAGE_KEY_INTEGRATION);
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+};
+
+export const saveIntegrationConfig = (config: { endpoint: string, apiKey: string, projectId: string }) => {
+  localStorage.setItem(STORAGE_KEY_INTEGRATION, JSON.stringify(config));
+};
 
 export interface FinancialPayload {
   projectId: string;
@@ -18,34 +31,36 @@ export interface FinancialPayload {
  * Envia dados financeiros para o Dashboard Centralizado (SaaS Admin Pro)
  */
 export const sendFinancialWebhook = async (data: Omit<FinancialPayload, 'projectId'>) => {
-  // Se as credenciais não estiverem configuradas, loga no console e encerra (modo dev)
-  if (!WEBHOOK_ENDPOINT || !PROJECT_API_KEY || !PROJECT_ID) {
-    console.log('[SaaS Integration] Webhook não configurado. Dados que seriam enviados:', data);
+  const config = getIntegrationConfig();
+
+  // Se as credenciais não estiverem configuradas, loga no console (modo dev ou não configurado)
+  if (!config || !config.endpoint || !config.apiKey || !config.projectId) {
+    console.log('[SaaS Integration] Webhook ignorado (Faltam credenciais em Ajustes). Dados:', data);
     return;
   }
 
   try {
     const payload: FinancialPayload = {
       ...data,
-      projectId: PROJECT_ID
+      projectId: config.projectId
     };
 
-    const response = await fetch(WEBHOOK_ENDPOINT, {
+    const response = await fetch(config.endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PROJECT_API_KEY}`
+        'Authorization': `Bearer ${config.apiKey}`
       },
       body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
-      throw new Error(`Erro API: ${response.statusText}`);
+      const errText = await response.text();
+      throw new Error(`Erro API (${response.status}): ${errText}`);
     }
 
-    console.log('[SaaS Integration] Transação enviada com sucesso!');
+    console.log('[SaaS Integration] Transação enviada com sucesso para o Painel Pro!');
   } catch (error) {
     console.error('[SaaS Integration] Falha ao enviar transação:', error);
-    // Aqui poderia haver uma lógica de "fila" para tentar enviar novamente depois (Retry pattern)
   }
 };
