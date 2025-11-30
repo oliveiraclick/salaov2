@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
@@ -592,11 +593,14 @@ const App: React.FC = () => {
   };
 
   const handleSavePlan = async () => {
-      if (!planForm.name || planForm.price === undefined) return alert("Dados incompletos");
+      if (!planForm.name || planForm.basePrice === undefined) return alert("Dados incompletos");
       const newPlan: SaasPlan = {
           id: editingPlanId || Date.now().toString(),
           name: planForm.name,
-          price: Number(planForm.price),
+          price: planForm.basePrice, // legacy support
+          basePrice: Number(planForm.basePrice),
+          pricePerUser: Number(planForm.pricePerUser),
+          minUsers: Number(planForm.minUsers),
           features: planForm.features || [],
           isRecommended: planForm.isRecommended || false
       };
@@ -686,7 +690,7 @@ const App: React.FC = () => {
       <div className="space-y-6 animate-fade-in pb-20">
           <header className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-100 flex justify-between items-center sticky top-0 z-20">
               <h2 className="text-xl font-black text-slate-800">Serviços</h2>
-              <button onClick={() => { setServiceForm({}); setEditingServiceId(null); setIsEditingService(true); }} className="bg-slate-900 text-white p-2 rounded-full hover:bg-rose-600 transition-colors shadow-lg">
+              <button onClick={() => { setServiceForm({}); setEditingServiceId(null); setIsEditingService(true); }} className="bg-rose-600 text-white p-2 rounded-full hover:bg-rose-600 transition-colors shadow-lg">
                   <Plus size={20} />
               </button>
           </header>
@@ -725,7 +729,7 @@ const App: React.FC = () => {
       <div className="space-y-6 pb-20">
            <header className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-100 flex justify-between items-center sticky top-0 z-20">
               <h2 className="text-xl font-black text-slate-800">Produtos</h2>
-              <button onClick={() => { setProductForm({}); setEditingProductId(null); setIsEditingProduct(true); }} className="bg-slate-900 text-white p-2 rounded-full"><Plus/></button>
+              <button onClick={() => { setProductForm({}); setEditingProductId(null); setIsEditingProduct(true); }} className="bg-rose-600 text-white p-2 rounded-full"><Plus/></button>
            </header>
            <div className="px-4">
               {isEditingProduct ? (
@@ -768,7 +772,7 @@ const App: React.FC = () => {
       <div className="space-y-6 pb-20">
           <header className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-slate-100 flex justify-between items-center sticky top-0 z-20">
               <h2 className="text-xl font-black text-slate-800">Equipe</h2>
-              <button onClick={() => { setEmployeeForm({}); setEditingEmployeeId(null); setIsEditingEmployee(true); }} className="bg-slate-900 text-white p-2 rounded-full"><Plus/></button>
+              <button onClick={() => { setEmployeeForm({}); setEditingEmployeeId(null); setIsEditingEmployee(true); }} className="bg-rose-600 text-white p-2 rounded-full"><Plus/></button>
           </header>
           <div className="px-4">
               {isEditingEmployee ? (
@@ -1023,7 +1027,20 @@ const App: React.FC = () => {
           {isEditingPlan ? (
               <div className="bg-white p-5 rounded-2xl border border-slate-100 space-y-3">
                   <input className="w-full p-3 bg-slate-50 rounded-xl" placeholder="Nome do Plano" value={planForm.name || ''} onChange={e=>setPlanForm({...planForm, name: e.target.value})}/>
-                  <input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="Preço (R$)" value={planForm.price || ''} onChange={e=>setPlanForm({...planForm, price: Number(e.target.value)})}/>
+                  <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-400 ml-1">Valor Base (R$)</label>
+                          <input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="29.90" value={planForm.basePrice || ''} onChange={e=>setPlanForm({...planForm, basePrice: Number(e.target.value)})}/>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-400 ml-1">Por Profissional (R$)</label>
+                          <input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="10.00" value={planForm.pricePerUser || ''} onChange={e=>setPlanForm({...planForm, pricePerUser: Number(e.target.value)})}/>
+                      </div>
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-400 ml-1">Mínimo de Profissionais (Gatilho)</label>
+                      <input type="number" className="w-full p-3 bg-slate-50 rounded-xl" placeholder="0 (Todos) ou 11 (Só grandes)" value={planForm.minUsers || 0} onChange={e=>setPlanForm({...planForm, minUsers: Number(e.target.value)})}/>
+                  </div>
                   
                   <div className="space-y-2">
                       <p className="text-xs font-bold text-slate-400">Benefícios:</p>
@@ -1050,7 +1067,12 @@ const App: React.FC = () => {
                       <div key={plan.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
                           <div>
                               <h4 className="font-bold text-slate-800">{plan.name}</h4>
-                              <p className="text-xs text-slate-500">R$ {plan.price}/mês • {plan.features.length} benefícios</p>
+                              <p className="text-sm font-black text-rose-600">
+                                  R$ {plan.basePrice} <span className="text-slate-400 font-medium text-xs">+ R$ {plan.pricePerUser}/prof</span>
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                  {plan.minUsers && plan.minUsers > 0 ? `Mínimo de ${plan.minUsers} profissionais` : 'Para qualquer tamanho'}
+                              </p>
                           </div>
                           <div className="flex gap-2">
                               <button onClick={() => { setPlanForm(plan); setEditingPlanId(plan.id); setIsEditingPlan(true); }} className="p-2 bg-slate-50 text-slate-600 rounded-lg"><Edit2 size={16}/></button>
@@ -1061,474 +1083,6 @@ const App: React.FC = () => {
               </div>
           )}
       </div>
-  );
-
-  const renderClientAuth = () => (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
-          <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 mb-4">
-              <User size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Acesse sua conta</h2>
-          <p className="text-slate-500 text-sm mb-6 max-w-xs">Digite seu celular para ver seus agendamentos.</p>
-          <input 
-              type="tel"
-              className="w-full max-w-xs p-4 bg-white border border-slate-200 rounded-2xl text-center text-lg font-bold tracking-widest mb-4"
-              placeholder="(00) 00000-0000"
-              value={clientLoginInput}
-              onChange={e => setClientLoginInput(e.target.value)}
-          />
-          <button onClick={handleClientLogin} className="w-full max-w-xs bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors">
-              Entrar
-          </button>
-      </div>
-  );
-
-  const renderClientStore = () => (
-    <div className="p-6 pb-32 space-y-6 animate-fade-in">
-        <h2 className="text-2xl font-black text-slate-800">Loja</h2>
-        <div className="grid grid-cols-2 gap-4">
-            {products.map(p => (
-                <div key={p.id} className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-100 flex flex-col items-center text-center">
-                    <div className="w-full h-24 bg-slate-100 rounded-xl mb-3 overflow-hidden"><img src={p.photoUrl} className="w-full h-full object-cover"/></div>
-                    <h4 className="font-bold text-slate-800 text-sm mb-1">{p.name}</h4>
-                    <p className="text-rose-500 font-black mb-3">R$ {p.price}</p>
-                    <button className="bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full w-full">Comprar</button>
-                </div>
-            ))}
-        </div>
-    </div>
-  );
-
-  const renderPublicSalon = () => (
-    <div className="pb-32 bg-slate-50 min-h-screen relative">
-      {/* Immersive Header */}
-      <div className="relative h-64 w-full">
-         <div className="absolute inset-0 bg-slate-900">
-            <img src={platformSalons.find(s=>s.slug === getCurrentNamespace())?.coverUrl} className="w-full h-full object-cover opacity-60"/>
-         </div>
-         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
-         
-         {/* Top Controls */}
-         <div className="absolute top-0 w-full p-4 flex justify-between items-start z-10">
-            {!isDirectLink && (
-              <button onClick={() => setView(ViewState.MARKETPLACE)} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition-all">
-                <ArrowLeft size={20} />
-              </button>
-            )}
-            <div className="flex gap-2 ml-auto">
-               <button onClick={handleShare} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition-all">
-                  <Share2 size={20} />
-               </button>
-               <button onClick={() => setShowAdminLogin(true)} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/30 transition-all">
-                  <Lock size={20} />
-               </button>
-            </div>
-         </div>
-
-         {/* Salon Info */}
-         <div className="absolute bottom-0 w-full p-6 text-white">
-            <h1 className="text-3xl font-black mb-1">{salonName}</h1>
-            <div className="flex items-center gap-2 text-sm text-slate-300 mb-4">
-               <Star className="text-yellow-400 fill-yellow-400" size={16}/>
-               <span className="font-bold text-white">4.8</span>
-               <span>•</span>
-               <span>{currentSettings.address || 'Localização não definida'}</span>
-            </div>
-            {/* Quick Actions */}
-            <div className="flex gap-3">
-               <button onClick={openWhatsApp} className="bg-green-500 text-white px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2 shadow-lg shadow-green-900/20">
-                  <Phone size={14}/> WhatsApp
-               </button>
-               <button onClick={openMaps} className="bg-white text-slate-900 px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2 shadow-lg">
-                  <MapPin size={14}/> Rota
-               </button>
-            </div>
-         </div>
-      </div>
-
-      {/* Location Context (Gemini Maps) */}
-      {locationContext.text && (
-        <div className="bg-white mx-4 -mt-4 mb-4 p-4 rounded-2xl shadow-sm border border-slate-100 relative z-10">
-           <div className="flex items-start gap-3">
-              <MapPin className="text-rose-500 mt-1" size={18} />
-              <div>
-                <h3 className="text-xs font-bold uppercase text-slate-400 mb-1">Sobre a localização</h3>
-                <p className="text-sm text-slate-700 leading-relaxed mb-2">{locationContext.text}</p>
-                <div className="flex flex-wrap gap-2">
-                  {locationContext.links.map((link, i) => (
-                    <a key={i} href={link.uri} target="_blank" rel="noopener noreferrer" className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200 flex items-center gap-1">
-                      <Link size={10}/> {link.title}
-                    </a>
-                  ))}
-                </div>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Main Content Tabs */}
-      {activeClientTab === 'home' && (
-        <div className="px-4 space-y-8 mt-6">
-           {/* Team Section */}
-           <section>
-              <h3 className="font-bold text-slate-800 mb-4 text-lg">Talentos</h3>
-              <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-                  {employees.map(emp => (
-                      <div key={emp.id} className="min-w-[140px] bg-white p-3 rounded-[1.5rem] border border-slate-100 text-center shadow-sm">
-                          <div className="w-20 h-20 mx-auto bg-slate-100 rounded-full mb-3 overflow-hidden shadow-inner"><img src={emp.photoUrl} className="w-full h-full object-cover"/></div>
-                          <h4 className="font-bold text-slate-800 text-sm truncate">{emp.name}</h4>
-                          <p className="text-xs text-slate-400">{emp.role}</p>
-                      </div>
-                  ))}
-              </div>
-           </section>
-
-           {/* Services Section */}
-           <section>
-              <h3 className="font-bold text-slate-800 mb-4 text-lg">Menu</h3>
-              <div className="space-y-3">
-                  {services.map(service => (
-                      <div key={service.id} className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-100 flex justify-between items-center group active:scale-[0.98] transition-transform">
-                          <div>
-                              <h4 className="font-bold text-slate-800 text-base">{service.name}</h4>
-                              <p className="text-xs text-slate-400 mt-1">{service.duration} min • {service.description}</p>
-                          </div>
-                          <button 
-                             onClick={() => openBookingModal(service)}
-                             className="bg-slate-900 text-white text-xs font-bold px-5 py-3 rounded-full shadow-lg shadow-slate-200 group-hover:bg-rose-600 transition-colors"
-                          >
-                             Agendar • R$ {service.price}
-                          </button>
-                      </div>
-                  ))}
-              </div>
-           </section>
-        </div>
-      )}
-
-      {activeClientTab === 'store' && renderClientStore()}
-      
-      {activeClientTab === 'appointments' && (
-         <div className="px-4 pt-6">
-             {!clientLoggedInPhone ? renderClientAuth() : (
-                 <div className="space-y-6">
-                      <div className="bg-slate-900 text-white p-6 rounded-[2rem] shadow-xl shadow-slate-200">
-                          <h2 className="text-xl font-bold mb-1">Olá, Cliente</h2>
-                          <p className="text-slate-400 text-sm">{clientLoggedInPhone}</p>
-                      </div>
-                      
-                      <div>
-                          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><CalendarDays size={18}/> Futuros</h3>
-                          <div className="space-y-3">
-                              {appointments.filter(a => a.clientId === clientLoggedInPhone && a.status === 'scheduled').length > 0 ? (
-                                  appointments.filter(a => a.clientId === clientLoggedInPhone && a.status === 'scheduled').map(app => (
-                                      <div key={app.id} className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-slate-100 flex justify-between items-center">
-                                           <div>
-                                               <p className="font-bold text-slate-800">{app.serviceName}</p>
-                                               <p className="text-sm text-slate-500">{app.date} às {app.time}</p>
-                                           </div>
-                                           <button onClick={() => handleCancelAppointment(app.id)} className="text-red-500 bg-red-50 p-2 rounded-full"><X size={18}/></button>
-                                      </div>
-                                  ))
-                              ) : <p className="text-slate-400 text-sm">Nenhum agendamento futuro.</p>}
-                          </div>
-                      </div>
-
-                      <div>
-                          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><History size={18}/> Histórico</h3>
-                          <div className="space-y-3 opacity-60">
-                              {appointments.filter(a => a.clientId === clientLoggedInPhone && a.status !== 'scheduled').map(app => (
-                                  <div key={app.id} className="bg-white p-4 rounded-2xl border border-slate-100">
-                                      <p className="font-bold text-slate-800">{app.serviceName}</p>
-                                      <p className="text-xs text-slate-500">{app.date}</p>
-                                      <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded mt-2 inline-block ${app.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                          {app.status === 'completed' ? 'Concluído' : 'Cancelado'}
-                                      </span>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-
-                      <button onClick={() => setClientLoggedInPhone(null)} className="w-full py-4 text-slate-400 font-bold flex items-center justify-center gap-2">
-                          <LogOut size={16}/> Sair da conta
-                      </button>
-                 </div>
-             )}
-         </div>
-      )}
-
-      {/* BOOKING MODAL */}
-      {selectedServiceForBooking && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
-           <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 animate-scale-in max-h-[90vh] overflow-y-auto">
-               <div className="flex justify-between items-center mb-6">
-                   <div>
-                       <h3 className="text-xl font-black text-slate-800">
-                           {bookingStep === 1 && "Escolha o Profissional"}
-                           {bookingStep === 2 && "Data e Hora"}
-                           {bookingStep === 3 && "Deseja algo mais?"}
-                           {bookingStep === 4 && "Loja"}
-                           {bookingStep === 5 && "Seus Dados"}
-                           {bookingStep === 6 && "Agendado!"}
-                       </h3>
-                       <p className="text-xs text-slate-400 font-bold">Passo {bookingStep} de 5</p>
-                   </div>
-                   <button onClick={closeBookingModal} className="bg-slate-50 p-2 rounded-full text-slate-400"><X size={20}/></button>
-               </div>
-               
-               {/* STEP 1: Professional */}
-               {bookingStep === 1 && (
-                   <div className="space-y-4">
-                       <p className="text-sm text-slate-500">Com quem você prefere realizar o serviço?</p>
-                       <div className="grid grid-cols-2 gap-3">
-                           {employees.map(emp => (
-                               <button 
-                                 key={emp.id} 
-                                 onClick={() => { setSelectedEmployeeForBooking(emp); setBookingStep(2); }}
-                                 className="flex flex-col items-center p-4 rounded-2xl border border-slate-100 hover:border-rose-200 hover:bg-rose-50 transition-colors"
-                               >
-                                   <div className="w-16 h-16 rounded-full bg-slate-100 mb-2 overflow-hidden"><img src={emp.photoUrl} className="w-full h-full object-cover"/></div>
-                                   <span className="font-bold text-slate-800 text-sm">{emp.name}</span>
-                               </button>
-                           ))}
-                       </div>
-                   </div>
-               )}
-
-               {/* STEP 2: Date & Time */}
-               {bookingStep === 2 && (
-                   <div className="space-y-6">
-                       <input 
-                         type="date" 
-                         className="w-full p-4 bg-slate-50 rounded-2xl border-none font-medium text-slate-600"
-                         onChange={(e) => setBookingDate(e.target.value)}
-                         min={new Date().toISOString().split('T')[0]}
-                       />
-                       {bookingDate && (
-                           <div className="grid grid-cols-4 gap-2">
-                               {['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(time => (
-                                   <button 
-                                     key={time}
-                                     onClick={() => { setBookingTime(time); setBookingStep(3); }} // Go to Decision Step
-                                     className="py-3 bg-slate-50 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-900 hover:text-white transition-colors"
-                                   >
-                                       {time}
-                                   </button>
-                               ))}
-                           </div>
-                       )}
-                   </div>
-               )}
-
-               {/* STEP 3: Decision (Shop vs Finish) */}
-               {bookingStep === 3 && (
-                   <div className="space-y-6 text-center py-4">
-                       <div className="bg-rose-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-rose-600">
-                           <ShoppingBag size={32} />
-                       </div>
-                       <div>
-                           <h4 className="font-bold text-lg text-slate-800">Deseja levar algo para casa?</h4>
-                           <p className="text-slate-500 text-sm mt-2">Temos produtos incríveis para manter o cuidado.</p>
-                       </div>
-                       <div className="grid grid-cols-1 gap-3">
-                           <button onClick={() => setBookingStep(4)} className="w-full py-4 bg-white border-2 border-slate-900 text-slate-900 rounded-2xl font-bold hover:bg-slate-50">
-                               Ver Loja
-                           </button>
-                           <button onClick={() => setBookingStep(5)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg shadow-slate-300">
-                               Finalizar Agendamento
-                           </button>
-                       </div>
-                   </div>
-               )}
-
-               {/* STEP 4: Product Store */}
-               {bookingStep === 4 && (
-                   <div className="space-y-6">
-                       <div className="space-y-3 max-h-60 overflow-y-auto">
-                           {products.map(p => {
-                               const qty = bookingCart.find(i => i.product.id === p.id)?.quantity || 0;
-                               return (
-                                   <div key={p.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
-                                       <div className="flex items-center gap-3">
-                                           <div className="w-12 h-12 bg-white rounded-lg overflow-hidden"><img src={p.photoUrl} className="w-full h-full object-cover"/></div>
-                                           <div>
-                                               <p className="font-bold text-sm text-slate-800">{p.name}</p>
-                                               <p className="text-xs text-rose-500 font-bold">R$ {p.price}</p>
-                                           </div>
-                                       </div>
-                                       <div className="flex items-center gap-2 bg-white rounded-lg p-1">
-                                           <button onClick={() => updateBookingQuantity(p, -1)} className="p-1 text-slate-400 hover:text-slate-800"><Minus size={14}/></button>
-                                           <span className="text-xs font-bold w-4 text-center">{qty}</span>
-                                           <button onClick={() => updateBookingQuantity(p, 1)} className="p-1 text-slate-400 hover:text-slate-800"><Plus size={14}/></button>
-                                       </div>
-                                   </div>
-                               );
-                           })}
-                       </div>
-                       <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold">
-                           Continuar para Finalização
-                       </button>
-                   </div>
-               )}
-
-               {/* STEP 5: Auth & Confirmation */}
-               {bookingStep === 5 && (
-                   <div className="space-y-6">
-                       <div className="bg-slate-50 p-4 rounded-2xl space-y-2">
-                           <div className="flex justify-between text-sm">
-                               <span className="text-slate-500">Serviço</span>
-                               <span className="font-bold text-slate-800">{selectedServiceForBooking.name}</span>
-                           </div>
-                           <div className="flex justify-between text-sm">
-                               <span className="text-slate-500">Profissional</span>
-                               <span className="font-bold text-slate-800">{selectedEmployeeForBooking?.name}</span>
-                           </div>
-                           <div className="flex justify-between text-sm">
-                               <span className="text-slate-500">Data</span>
-                               <span className="font-bold text-slate-800">{bookingDate.split('-').reverse().join('/')} às {bookingTime}</span>
-                           </div>
-                           {bookingCart.length > 0 && (
-                               <div className="pt-2 border-t border-slate-200 mt-2">
-                                   <p className="text-xs font-bold text-slate-400 uppercase mb-2">Produtos Adicionais</p>
-                                   {bookingCart.map(item => (
-                                       <div key={item.product.id} className="flex justify-between text-xs mb-1">
-                                           <span className="text-slate-600">{item.quantity}x {item.product.name}</span>
-                                           <span className="font-bold">R$ {item.product.price * item.quantity}</span>
-                                       </div>
-                                   ))}
-                               </div>
-                           )}
-                           <div className="flex justify-between items-center pt-3 border-t border-slate-200 mt-2">
-                               <span className="font-black text-slate-800 text-lg">Total</span>
-                               <span className="font-black text-rose-600 text-lg">
-                                   R$ {selectedServiceForBooking.price + bookingCart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)}
-                               </span>
-                           </div>
-                       </div>
-
-                       <div className="space-y-3">
-                           <input 
-                             className="w-full p-4 bg-slate-50 rounded-2xl border-none" 
-                             placeholder="Seu Celular (WhatsApp)" 
-                             value={clientPhone} 
-                             onChange={handlePhoneChange}
-                           />
-                           
-                           {/* Smart Recognition */}
-                           {clientPhone.length > 8 && !isNewClient && clientName && (
-                               <div className="p-3 bg-emerald-50 text-emerald-700 text-sm rounded-xl font-bold text-center">
-                                   👋 Bem-vindo de volta, {clientName}!
-                               </div>
-                           )}
-
-                           {/* New Client Inputs */}
-                           {isNewClient && clientPhone.length > 8 && (
-                               <div className="animate-fade-in space-y-3">
-                                   <input className="w-full p-4 bg-slate-50 rounded-2xl border-none" placeholder="Seu Nome Completo" value={clientName} onChange={e => setClientName(e.target.value)}/>
-                                   <div className="relative">
-                                       <span className="absolute left-4 top-2 text-[10px] text-slate-400 font-bold uppercase">Data de Nascimento</span>
-                                       <input type="date" className="w-full p-4 pt-6 bg-slate-50 rounded-2xl border-none font-medium text-slate-700" value={clientBirthDate} onChange={e => setClientBirthDate(e.target.value)}/>
-                                   </div>
-                               </div>
-                           )}
-                       </div>
-                       
-                       <button onClick={confirmBooking} className="w-full bg-rose-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition-colors">
-                           Confirmar Agendamento
-                       </button>
-                   </div>
-               )}
-
-               {/* STEP 6: Success */}
-               {bookingStep === 6 && (
-                   <div className="text-center py-8 space-y-6">
-                       <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-600 mb-4 animate-scale-in">
-                           <CheckCircle2 size={40} />
-                       </div>
-                       <div>
-                           <h3 className="text-2xl font-black text-slate-800">Agendamento OK!</h3>
-                           <p className="text-slate-500 mt-2">Te esperamos no dia marcado.</p>
-                       </div>
-                       
-                       {/* Final Summary Card */}
-                       <div className="bg-slate-50 p-6 rounded-[1.5rem] text-left space-y-3 shadow-inner">
-                           <div>
-                               <p className="text-xs text-slate-400 font-bold uppercase">Serviço</p>
-                               <p className="font-bold text-slate-800 text-lg">{selectedServiceForBooking.name}</p>
-                           </div>
-                           
-                           {bookingCart.length > 0 && (
-                               <div>
-                                   <p className="text-xs text-slate-400 font-bold uppercase mb-1">Produtos</p>
-                                   {bookingCart.map(item => (
-                                       <div key={item.product.id} className="flex justify-between text-sm text-slate-600 border-b border-slate-200 pb-1 mb-1 last:border-0">
-                                           <span>{item.quantity}x {item.product.name}</span>
-                                           <span className="font-bold">R$ {item.product.price * item.quantity}</span>
-                                       </div>
-                                   ))}
-                               </div>
-                           )}
-                           
-                           <div className="pt-2 border-t border-slate-200 flex justify-between items-center mt-2">
-                               <span className="font-bold text-slate-600">Total a Pagar</span>
-                               <span className="font-black text-emerald-600 text-xl">
-                                   R$ {selectedServiceForBooking.price + bookingCart.reduce((acc, item) => acc + (item.product.price * item.quantity), 0)}
-                               </span>
-                           </div>
-                       </div>
-
-                       <button onClick={closeBookingModal} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold">
-                           Voltar ao Início
-                       </button>
-                   </div>
-               )}
-           </div>
-        </div>
-      )}
-
-      {/* ADMIN LOGIN MODAL */}
-      {showAdminLogin && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="relative w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl animate-scale-in">
-                  {/* Background Image with Blur */}
-                  <div className="absolute inset-0">
-                      <img 
-                        src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=800" 
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-md"></div>
-                  </div>
-
-                  {/* Content Card */}
-                  <div className="relative z-10 p-8 flex flex-col items-center">
-                      <div className="bg-white w-full rounded-3xl p-6 shadow-xl space-y-6">
-                           <div className="flex justify-between items-center">
-                               <h3 className="font-bold text-slate-800 text-lg">Área do Parceiro</h3>
-                               <button onClick={() => setShowAdminLogin(false)} className="bg-slate-100 p-2 rounded-full text-slate-400"><ArrowLeft size={16}/></button>
-                           </div>
-                           
-                           <div>
-                               <label className="text-xs font-bold text-slate-400 uppercase ml-2 mb-1 block">Senha de Acesso</label>
-                               <input 
-                                 type="password" 
-                                 className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center tracking-widest font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-200 transition-all"
-                                 placeholder="••••••"
-                                 value={adminPass}
-                                 onChange={e => setAdminPass(e.target.value)}
-                               />
-                           </div>
-
-                           <button onClick={handleAdminLogin} className="w-full bg-rose-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition-colors flex justify-center items-center gap-2">
-                               <Lock size={18} /> Entrar
-                           </button>
-
-                           <p className="text-center text-xs text-slate-400">Senha demo: <b>admin123</b></p>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-    </div>
   );
 
   const renderSaaS_LP = () => (
@@ -1568,25 +1122,33 @@ const App: React.FC = () => {
 
                    <button 
                       onClick={() => document.getElementById('plans')?.scrollIntoView({behavior: 'smooth'})}
-                      className="w-full bg-slate-900 text-white py-4 rounded-full font-bold shadow-xl shadow-slate-300 hover:bg-slate-800 transition-colors"
+                      className="w-full bg-rose-600 text-white py-4 rounded-full font-bold shadow-xl shadow-rose-200 hover:bg-rose-700 transition-colors"
                    >
                        Eu Quero
                    </button>
                    
                    {/* Social Login */}
-                   <button className="w-full bg-white border border-slate-200 py-3 rounded-full font-bold text-slate-600 text-sm flex items-center justify-center gap-2 mt-2">
-                       <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-red-500 flex items-center justify-center text-[8px] text-white font-bold">G</div>
-                       Cadastrar com Google
+                   <button className="w-full bg-white border border-slate-300 py-3 rounded-full font-medium text-slate-700 text-sm flex items-center justify-center gap-3 mt-2 hover:bg-slate-50 transition-colors">
+                       <svg className="w-5 h-5" viewBox="0 0 24 24">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                       </svg>
+                       Continuar com Google
                    </button>
 
                    {/* Store Badges */}
-                   <div className="flex justify-center gap-3 pt-4 opacity-60 grayscale hover:grayscale-0 transition-all">
-                       <button className="bg-black text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
-                           <div className="text-[10px] text-left leading-tight">Download on the<br/><span className="text-sm font-bold">App Store</span></div>
-                       </button>
-                       <button className="bg-black text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
-                           <div className="text-[10px] text-left leading-tight">GET IT ON<br/><span className="text-sm font-bold">Google Play</span></div>
-                       </button>
+                   <div className="flex flex-col items-center pt-6 opacity-40 hover:opacity-60 transition-opacity">
+                       <div className="flex justify-center gap-3 grayscale">
+                           <button className="bg-black text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
+                               <div className="text-[10px] text-left leading-tight">Download on the<br/><span className="text-sm font-bold">App Store</span></div>
+                           </button>
+                           <button className="bg-black text-white px-3 py-1.5 rounded-lg flex items-center gap-2">
+                               <div className="text-[10px] text-left leading-tight">GET IT ON<br/><span className="text-sm font-bold">Google Play</span></div>
+                           </button>
+                       </div>
+                       <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Em Breve</p>
                    </div>
                </div>
           </section>
@@ -1621,45 +1183,52 @@ const App: React.FC = () => {
               <p className="text-center text-slate-500 text-sm mb-8">Escolha o ideal para o seu momento.</p>
               
               <div className="space-y-6 max-w-sm mx-auto">
-                  {/* Start */}
-                  <div className="p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 text-center">
-                      <h3 className="font-bold text-slate-800 mb-4">Start</h3>
-                      <p className="text-4xl font-black text-slate-900 mb-6">R$ 0<span className="text-sm text-slate-400 font-medium">/mês</span></p>
-                      <ul className="space-y-3 text-sm text-left mb-8">
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Agenda Simples</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Link Personalizado</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Até 50 agendamentos</li>
-                      </ul>
-                      <button onClick={() => setShowAdminLogin(true)} className="w-full py-4 bg-slate-200 text-slate-600 rounded-2xl font-bold hover:bg-slate-300">Começar Agora</button>
-                  </div>
+                  {saasPlans.sort((a,b) => (a.price || 0) - (b.price || 0)).map(plan => {
+                      const isRecommended = plan.isRecommended;
+                      const isFree = plan.basePrice === 0 && (!plan.pricePerUser || plan.pricePerUser === 0);
+                      const isDynamic = plan.pricePerUser && plan.pricePerUser > 0;
 
-                  {/* Pro */}
-                  <div className="p-8 rounded-[2.5rem] bg-white border-2 border-rose-100 shadow-xl shadow-rose-100/50 text-center relative overflow-hidden">
-                      <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-rose-400 to-rose-600"></div>
-                      <span className="inline-block px-3 py-1 bg-rose-600 text-white text-[10px] font-bold uppercase tracking-wide rounded-full mb-4 absolute top-4 right-4">Mais Escolhido</span>
-                      
-                      <h3 className="font-bold text-slate-800 mb-4 mt-2">Pro</h3>
-                      <p className="text-4xl font-black text-slate-900 mb-6">R$ 99<span className="text-sm text-slate-400 font-medium">/mês</span></p>
-                      <ul className="space-y-3 text-sm text-left mb-8">
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Agenda Ilimitada</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Controle Financeiro</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Gestão de Estoque</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Site Próprio</li>
-                      </ul>
-                      <button onClick={() => setShowAdminLogin(true)} className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700">Começar Agora</button>
-                  </div>
+                      return (
+                          <div key={plan.id} className={`p-8 rounded-[2.5rem] text-center relative overflow-hidden ${isRecommended ? 'bg-white border-2 border-rose-100 shadow-xl shadow-rose-100/50' : 'bg-slate-50 border border-slate-100'}`}>
+                              {isRecommended && (
+                                  <>
+                                      <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-rose-400 to-rose-600"></div>
+                                      <span className="inline-block px-3 py-1 bg-rose-600 text-white text-[10px] font-bold uppercase tracking-wide rounded-full mb-4 absolute top-4 right-4">Mais Escolhido</span>
+                                  </>
+                              )}
+                              
+                              <h3 className="font-bold text-slate-800 mb-2 mt-2">{plan.name}</h3>
+                              
+                              <div className="mb-6">
+                                  <p className="text-4xl font-black text-slate-900">
+                                      R$ {plan.basePrice}
+                                      <span className="text-sm text-slate-400 font-medium">/mês</span>
+                                  </p>
+                                  {isDynamic && (
+                                      <p className="text-sm font-bold text-rose-500 mt-1">
+                                          + R$ {plan.pricePerUser} <span className="text-slate-400 font-normal">por profissional</span>
+                                      </p>
+                                  )}
+                                  {plan.minUsers && plan.minUsers > 0 ? (
+                                      <p className="text-[10px] bg-slate-200 text-slate-600 inline-block px-2 py-1 rounded-full mt-2 font-bold uppercase tracking-wide">
+                                          Acima de {plan.minUsers - 1} profissionais
+                                      </p>
+                                  ) : null}
+                              </div>
 
-                   {/* Enterprise */}
-                   <div className="p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 text-center">
-                      <h3 className="font-bold text-slate-800 mb-4">Enterprise</h3>
-                      <p className="text-4xl font-black text-slate-900 mb-6">R$ 199<span className="text-sm text-slate-400 font-medium">/mês</span></p>
-                      <ul className="space-y-3 text-sm text-left mb-8">
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Múltiplos Profissionais</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Dashboard Avançado</li>
-                          <li className="flex gap-2"><CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> Campanhas de Marketing</li>
-                      </ul>
-                      <button onClick={() => setShowAdminLogin(true)} className="w-full py-4 bg-slate-200 text-slate-600 rounded-2xl font-bold hover:bg-slate-300">Falar com Consultor</button>
-                  </div>
+                              <ul className="space-y-3 text-sm text-left mb-8">
+                                  {plan.features.map((feat, idx) => (
+                                      <li key={idx} className="flex gap-2">
+                                          <CheckCircle2 size={18} className="text-emerald-500 shrink-0"/> {feat}
+                                      </li>
+                                  ))}
+                              </ul>
+                              <button onClick={() => setShowAdminLogin(true)} className={`w-full py-4 rounded-2xl font-bold transition-colors ${isRecommended ? 'bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
+                                  {isFree ? 'Começar Agora' : 'Assinar Agora'}
+                              </button>
+                          </div>
+                      );
+                  })}
               </div>
           </section>
 
@@ -1671,94 +1240,404 @@ const App: React.FC = () => {
   );
 
   const renderMarketplace = () => (
-      <div className="pb-24">
-         <header className="px-6 py-4 flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm">
-             <h1 className="text-lg font-bold bg-gradient-to-r from-rose-600 to-purple-600 bg-clip-text text-transparent uppercase tracking-tight">SALÃO ONLINE</h1>
-             <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center"><User size={16} className="text-slate-400"/></div>
-         </header>
+    <div className="pb-24">
+       <header className="px-6 py-6 bg-white sticky top-0 z-30 shadow-sm">
+           <div className="flex justify-between items-center mb-4">
+               <div>
+                   <h1 className="text-2xl font-black text-slate-800">Explorar</h1>
+                   <p className="text-slate-400 text-sm">Encontre os melhores serviços</p>
+               </div>
+               {/* Location context could go here if global */}
+           </div>
+           
+           <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+               {['Todos', 'Barbearia', 'Salão', 'Manicure', 'Estética'].map(cat => (
+                   <button key={cat} className="px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-xs font-bold whitespace-nowrap hover:bg-slate-100 transition-colors">
+                       {cat}
+                   </button>
+               ))}
+           </div>
+       </header>
 
-         <div className="p-4 space-y-6">
-             {/* Search */}
-             <div className="relative">
-                 <Search className="absolute left-4 top-3.5 text-slate-400" size={20}/>
-                 <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-100 shadow-sm" placeholder="Buscar salão ou serviço..."/>
-             </div>
+       <div className="px-4 space-y-6 pt-2">
+           <div>
+               <h3 className="font-bold text-slate-800 mb-3 text-lg">Recomendados</h3>
+               <div className="grid gap-4">
+                   {platformSalons.map(salon => (
+                       <div key={salon.id} onClick={() => handleSalonSelect(salon)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:shadow-md transition-shadow">
+                           <div className="w-20 h-20 bg-slate-200 rounded-xl overflow-hidden shrink-0">
+                               <img src={salon.coverUrl} className="w-full h-full object-cover" alt={salon.name}/>
+                           </div>
+                           <div className="flex-1 flex flex-col justify-center">
+                               <h4 className="font-bold text-slate-800">{salon.name}</h4>
+                               <p className="text-xs text-slate-400 mb-2">{salon.category} • {salon.location}</p>
+                               <div className="flex items-center gap-1 text-amber-400">
+                                   <Star size={12} fill="currentColor"/>
+                                   <span className="text-xs font-bold text-slate-600">{salon.rating}</span>
+                               </div>
+                           </div>
+                           <div className="flex items-center text-rose-500">
+                               <ChevronRight size={20}/>
+                           </div>
+                       </div>
+                   ))}
+               </div>
+           </div>
+       </div>
+    </div>
+  );
 
-             {/* Categories */}
-             <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-                 {['Todos', 'Barbearia', 'Salão', 'Manicure', 'Spa'].map((cat, i) => (
-                     <button key={cat} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${i===0 ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-100'}`}>
-                         {cat}
-                     </button>
-                 ))}
-             </div>
+  const renderPublicSalon = () => (
+     <div className="pb-24">
+        {/* Salon Header */}
+        <div className="relative h-48 bg-slate-900">
+            <img src={platformSalons.find(s => s.slug === getCurrentNamespace())?.coverUrl || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=800'} className="w-full h-full object-cover opacity-60" />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 to-transparent"></div>
+            <div className="absolute bottom-0 left-0 w-full p-6 text-white">
+                <h1 className="text-2xl font-black mb-1">{salonName}</h1>
+                <p className="text-sm text-slate-300 flex items-center gap-1 mb-2">
+                    <MapPin size={14}/> {currentSettings.address}
+                </p>
+                {locationContext.text && (
+                   <div className="bg-white/10 backdrop-blur-md p-3 rounded-xl text-xs text-slate-200 border border-white/10 mb-2">
+                      <p className="mb-2"><span className="text-amber-400 font-bold">IA:</span> {locationContext.text}</p>
+                      <div className="flex gap-2 flex-wrap">
+                          {locationContext.links.map((link, i) => (
+                              <a key={i} href={link.uri} target="_blank" rel="noreferrer" className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-[10px] font-bold transition-colors">{link.title}</a>
+                          ))}
+                      </div>
+                   </div>
+                )}
+                <div className="flex gap-3 mt-3">
+                   <button onClick={openWhatsApp} className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/20">
+                       <Phone size={14}/> WhatsApp
+                   </button>
+                   <button onClick={openMaps} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
+                       <Map size={14}/> Mapa
+                   </button>
+                   <button onClick={handleShare} className="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-bold">
+                       <Share2 size={14}/>
+                   </button>
+                </div>
+            </div>
+            <button onClick={() => setView(ViewState.MARKETPLACE)} className="absolute top-4 left-4 bg-black/30 backdrop-blur text-white p-2 rounded-full">
+                <ArrowLeft size={20}/>
+            </button>
+        </div>
 
-             {/* Featured Salons (Random 3) */}
-             <div>
-                 <h2 className="font-bold text-slate-800 mb-4 px-2">Em Destaque</h2>
-                 <div className="space-y-4">
-                     {(showAllSalons ? platformSalons : randomSalons.slice(0, 3)).map(salon => (
-                         <div 
-                           key={salon.id} 
-                           onClick={() => handleSalonSelect(salon)}
-                           className="bg-white p-3 rounded-[1.5rem] shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:border-rose-100 transition-colors group"
-                         >
-                             <div className="w-24 h-24 bg-slate-100 rounded-2xl overflow-hidden shrink-0"><img src={salon.coverUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/></div>
-                             <div className="flex-1 py-1">
-                                 <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wide bg-rose-50 px-2 py-1 rounded-md mb-2 inline-block">{salon.category}</span>
-                                 <h3 className="font-bold text-slate-800 text-lg leading-tight mb-1">{salon.name}</h3>
-                                 <div className="flex items-center gap-1 text-slate-400 text-xs mb-3">
-                                     <MapPin size={12}/> {salon.location}
-                                 </div>
-                                 <div className="flex items-center gap-1 text-xs font-bold text-slate-700">
-                                     <Star className="text-yellow-400 fill-yellow-400" size={14}/> {salon.rating}
-                                     <span className="text-slate-300 mx-1">•</span>
-                                     <span className="text-emerald-600">Aberto agora</span>
-                                 </div>
-                             </div>
-                             <div className="flex items-center justify-center pr-2 text-slate-300">
-                                 <ChevronRight />
-                             </div>
+        {activeClientTab === 'home' && (
+            <div className="px-4 py-6 space-y-6">
+                <div>
+                   <h3 className="font-bold text-slate-800 mb-4 text-lg">Serviços</h3>
+                   <div className="grid gap-3">
+                       {services.map(s => (
+                           <div key={s.id} onClick={() => openBookingModal(s)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center cursor-pointer active:scale-95 transition-transform">
+                               <div>
+                                   <h4 className="font-bold text-slate-800">{s.name}</h4>
+                                   <p className="text-xs text-slate-400 mb-1">{s.description}</p>
+                                   <p className="text-xs font-bold text-rose-500">R$ {s.price} • {s.duration} min</p>
+                               </div>
+                               <div className="bg-rose-50 text-rose-600 p-2 rounded-xl">
+                                   <Plus size={20}/>
+                               </div>
+                           </div>
+                       ))}
+                   </div>
+                </div>
+            </div>
+        )}
+
+        {activeClientTab === 'store' && (
+            <div className="px-4 py-6">
+                <h3 className="font-bold text-slate-800 mb-4 text-lg">Loja</h3>
+                {products.length === 0 ? <EmptyState icon={ShoppingBag} title="Loja Vazia" description="Nenhum produto disponível no momento." /> : (
+                    <div className="grid grid-cols-2 gap-4">
+                        {products.map(p => (
+                            <div key={p.id} className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                                <div className="h-32 bg-slate-100 rounded-xl mb-3 overflow-hidden">
+                                    <img src={p.photoUrl} className="w-full h-full object-cover" alt={p.name}/>
+                                </div>
+                                <h4 className="font-bold text-sm text-slate-800 truncate">{p.name}</h4>
+                                <p className="text-xs text-slate-400 line-clamp-2 h-8 mb-2">{p.description}</p>
+                                <div className="flex justify-between items-center mt-2">
+                                    <span className="font-black text-slate-800">R$ {p.price}</span>
+                                    {/* Simplified Store: Just View */}
+                                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500 font-bold">
+                                        {p.stock > 0 ? 'Disponível' : 'Esgotado'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        )}
+
+        {activeClientTab === 'appointments' && (
+            <div className="px-4 py-6">
+                 {!clientLoggedInPhone ? (
+                     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center space-y-4">
+                         <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+                             <User size={32}/>
                          </div>
-                     ))}
-                 </div>
-                 
-                 {!showAllSalons && (
-                    <button onClick={() => setShowAllSalons(true)} className="w-full py-3 mt-4 text-slate-500 text-sm font-bold bg-white border border-slate-100 rounded-2xl">
-                        Ver Lista Completa
-                    </button>
+                         <h3 className="font-bold text-slate-800">Meus Agendamentos</h3>
+                         <p className="text-sm text-slate-500">Digite seu celular para acessar seu histórico.</p>
+                         <input 
+                            className="w-full bg-slate-50 p-4 rounded-xl text-center font-bold text-lg tracking-widest outline-none focus:ring-2 focus:ring-rose-200"
+                            placeholder="(00) 00000-0000"
+                            value={clientLoginInput}
+                            onChange={e => setClientLoginInput(e.target.value)}
+                         />
+                         <button onClick={handleClientLogin} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg shadow-slate-200">
+                             Acessar
+                         </button>
+                     </div>
+                 ) : (
+                     <div className="space-y-6">
+                         <div className="flex justify-between items-center">
+                             <h3 className="font-bold text-slate-800 text-lg">Olá, {clients.find(c => c.phone === clientLoggedInPhone)?.name || 'Cliente'}</h3>
+                             <button onClick={() => setClientLoggedInPhone(null)} className="text-xs font-bold text-rose-500">Sair</button>
+                         </div>
+                         
+                         <div className="space-y-3">
+                             {appointments.filter(a => a.clientId === clientLoggedInPhone).length === 0 ? (
+                                 <EmptyState icon={Calendar} title="Nenhum agendamento" description="Você ainda não tem agendamentos." />
+                             ) : (
+                                 appointments.filter(a => a.clientId === clientLoggedInPhone).slice().reverse().map(app => (
+                                     <div key={app.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
+                                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${app.status === 'scheduled' ? 'bg-amber-400' : app.status === 'completed' ? 'bg-emerald-500' : 'bg-red-400'}`}></div>
+                                         <div className="flex justify-between items-start pl-3">
+                                             <div>
+                                                 <h4 className="font-bold text-slate-800">{app.serviceName}</h4>
+                                                 <p className="text-sm text-slate-500">{app.date} às {app.time}</p>
+                                                 <p className="text-xs text-slate-400 mt-1">{app.employeeName}</p>
+                                             </div>
+                                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                                                 app.status === 'scheduled' ? 'bg-amber-50 text-amber-600' : 
+                                                 app.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 
+                                                 'bg-red-50 text-red-600'
+                                             }`}>
+                                                 {app.status === 'scheduled' ? 'Agendado' : app.status === 'completed' ? 'Concluído' : 'Cancelado'}
+                                             </span>
+                                         </div>
+                                         {app.status === 'scheduled' && (
+                                             <button onClick={() => handleCancelAppointment(app.id)} className="mt-3 w-full py-2 border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50">
+                                                 Cancelar Agendamento
+                                             </button>
+                                         )}
+                                     </div>
+                                 ))
+                             )}
+                         </div>
+                     </div>
                  )}
-             </div>
-         </div>
-      </div>
+            </div>
+        )}
+     </div>
   );
 
   return (
     <Layout 
-      currentView={view} 
-      setView={setView} 
-      salonName={salonName}
-      activeClientTab={activeClientTab}
-      onClientTabChange={setActiveClientTab}
+       currentView={view} 
+       setView={setView} 
+       salonName={salonName}
+       activeClientTab={activeClientTab}
+       onClientTabChange={setActiveClientTab}
     >
-      {isLoading && (
-        <div className="fixed inset-0 bg-white z-50 flex items-center justify-center">
-            <Loader2 className="animate-spin text-rose-600" size={32} />
-        </div>
-      )}
+        {isLoading && (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <Loader2 className="animate-spin mb-2" />
+                <span className="text-xs font-bold">Carregando...</span>
+            </div>
+        )}
 
-      {view === ViewState.SAAS_LP && renderSaaS_LP()}
-      {view === ViewState.MARKETPLACE && renderMarketplace()}
-      {view === ViewState.SAAS_ADMIN && renderSaaSAdmin()}
+        {!isLoading && (
+            <>
+                {view === ViewState.SAAS_LP && renderSaaS_LP()}
+                {view === ViewState.MARKETPLACE && renderMarketplace()}
+                {view === ViewState.SAAS_ADMIN && renderSaaSAdmin()}
+                {(view === ViewState.PUBLIC_SALON || view === ViewState.CLIENT_STORE) && renderPublicSalon()}
+                
+                {/* Admin Views */}
+                {view === ViewState.DASHBOARD && renderDashboard()}
+                {view === ViewState.SERVICES && renderServices()}
+                {view === ViewState.PRODUCTS && renderProducts()}
+                {view === ViewState.TEAM && renderTeam()}
+                {view === ViewState.FINANCE && renderFinance()}
+                {view === ViewState.SETTINGS && renderSettings()}
+            </>
+        )}
 
-      {view === ViewState.PUBLIC_SALON && renderPublicSalon()}
+        {/* Modals */}
+        {showAdminLogin && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">Acesso Restrito</h3>
+                    <input 
+                        type="password" 
+                        className="w-full bg-slate-100 border-none rounded-xl p-3 mb-4 text-center font-bold text-slate-800 focus:ring-2 focus:ring-rose-500 outline-none" 
+                        placeholder="Senha"
+                        value={adminPass}
+                        onChange={e => setAdminPass(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowAdminLogin(false)} className="flex-1 py-3 text-slate-500 font-bold text-sm">Cancelar</button>
+                        <button onClick={handleAdminLogin} className="flex-1 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-200">Entrar</button>
+                    </div>
+                </div>
+            </div>
+        )}
+        
+        {/* Booking Modal Logic (Simplified for space, assuming 6 steps or similar) */}
+        {selectedServiceForBooking && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white w-full sm:max-w-md p-6 rounded-t-[2rem] sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                    {bookingStep === 1 && (
+                        <div>
+                             <h3 className="text-lg font-bold text-slate-800 mb-4">Escolha o Profissional</h3>
+                             <div className="space-y-3">
+                                 {employees.map(emp => (
+                                     <div key={emp.id} onClick={() => { setSelectedEmployeeForBooking(emp); setBookingStep(2); }} className="flex items-center gap-4 p-3 rounded-2xl border border-slate-100 cursor-pointer hover:bg-slate-50">
+                                         <div className="w-12 h-12 bg-slate-200 rounded-full overflow-hidden">
+                                             <img src={emp.photoUrl} className="w-full h-full object-cover"/>
+                                         </div>
+                                         <div>
+                                             <h4 className="font-bold text-slate-800">{emp.name}</h4>
+                                             <p className="text-xs text-slate-400">{emp.role}</p>
+                                         </div>
+                                     </div>
+                                 ))}
+                                 <button onClick={() => { setSelectedEmployeeForBooking({ id: 'any', name: 'Qualquer Profissional', role: '', bio: '' }); setBookingStep(2); }} className="w-full py-3 text-slate-500 font-bold text-sm bg-slate-50 rounded-xl mt-2">
+                                     Qualquer Profissional
+                                 </button>
+                             </div>
+                             <button onClick={closeBookingModal} className="w-full mt-4 py-3 text-rose-500 font-bold text-sm">Cancelar</button>
+                        </div>
+                    )}
+                    
+                    {bookingStep === 2 && (
+                         <div>
+                             <h3 className="text-lg font-bold text-slate-800 mb-4">Data e Hora</h3>
+                             <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-bold text-slate-600" onChange={e => setBookingDate(e.target.value)} />
+                             <div className="grid grid-cols-4 gap-2 mb-4">
+                                 {['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(time => (
+                                     <button key={time} onClick={() => setBookingTime(time)} className={`py-2 rounded-lg font-bold text-xs ${bookingTime === time ? 'bg-rose-600 text-white' : 'bg-slate-50 text-slate-500'}`}>{time}</button>
+                                 ))}
+                             </div>
+                             <button disabled={!bookingDate || !bookingTime} onClick={() => setBookingStep(3)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold disabled:opacity-50">Continuar</button>
+                             <button onClick={() => setBookingStep(1)} className="w-full mt-2 py-3 text-slate-400 font-bold text-sm">Voltar</button>
+                         </div>
+                    )}
 
-      {view === ViewState.DASHBOARD && renderDashboard()}
-      {view === ViewState.SERVICES && renderServices()}
-      {view === ViewState.PRODUCTS && renderProducts()}
-      {view === ViewState.TEAM && renderTeam()}
-      {view === ViewState.FINANCE && renderFinance()}
-      {view === ViewState.SETTINGS && renderSettings()}
+                    {bookingStep === 3 && (
+                        <div>
+                             <h3 className="text-lg font-bold text-slate-800 mb-4">Deseja adicionar produtos?</h3>
+                             <p className="text-sm text-slate-500 mb-6">Leve produtos para casa e pague tudo junto no salão.</p>
+                             <button onClick={() => setBookingStep(4)} className="w-full bg-rose-50 text-rose-600 py-4 rounded-xl font-bold mb-3">Sim, ver produtos</button>
+                             <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Não, finalizar agendamento</button>
+                        </div>
+                    )}
+
+                    {bookingStep === 4 && (
+                        <div>
+                             <h3 className="text-lg font-bold text-slate-800 mb-4">Adicionar Produtos</h3>
+                             <div className="space-y-3 max-h-60 overflow-y-auto mb-4">
+                                 {products.map(p => {
+                                     const qty = bookingCart.find(i => i.product.id === p.id)?.quantity || 0;
+                                     return (
+                                         <div key={p.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-xl">
+                                             <div>
+                                                 <p className="font-bold text-sm text-slate-800">{p.name}</p>
+                                                 <p className="text-xs text-rose-500 font-bold">R$ {p.price}</p>
+                                             </div>
+                                             <div className="flex items-center gap-3">
+                                                 {qty > 0 && <button onClick={() => updateBookingQuantity(p, -1)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-600">-</button>}
+                                                 <span className="font-bold text-slate-800 w-4 text-center">{qty}</span>
+                                                 <button onClick={() => updateBookingQuantity(p, 1)} className="w-8 h-8 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center font-bold">+</button>
+                                             </div>
+                                         </div>
+                                     );
+                                 })}
+                             </div>
+                             <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Continuar</button>
+                        </div>
+                    )}
+
+                    {bookingStep === 5 && (
+                        <div>
+                             <h3 className="text-lg font-bold text-slate-800 mb-4">Seus Dados</h3>
+                             <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Celular (WhatsApp)" value={clientPhone} onChange={handlePhoneChange}/>
+                             {isNewClient && (
+                                 <>
+                                     <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Nome Completo" value={clientName} onChange={e => setClientName(e.target.value)}/>
+                                     <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium text-slate-500" placeholder="Data de Nascimento" value={clientBirthDate} onChange={e => setClientBirthDate(e.target.value)}/>
+                                 </>
+                             )}
+                             <div className="bg-slate-50 p-4 rounded-xl mb-4">
+                                 <p className="text-xs text-slate-400 font-bold uppercase mb-2">Resumo</p>
+                                 <div className="flex justify-between text-sm mb-1"><span className="text-slate-600">{selectedServiceForBooking.name}</span><span className="font-bold">R$ {selectedServiceForBooking.price}</span></div>
+                                 {bookingCart.length > 0 && bookingCart.map(i => (
+                                     <div key={i.product.id} className="flex justify-between text-sm mb-1"><span className="text-slate-600">{i.quantity}x {i.product.name}</span><span className="font-bold">R$ {i.product.price * i.quantity}</span></div>
+                                 ))}
+                                 <div className="border-t border-slate-200 mt-2 pt-2 flex justify-between font-black text-slate-800">
+                                     <span>Total Estimado</span>
+                                     <span>R$ {selectedServiceForBooking.price + bookingCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}</span>
+                                 </div>
+                             </div>
+                             <button onClick={confirmBooking} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200">Confirmar Agendamento</button>
+                        </div>
+                    )}
+
+                    {bookingStep === 6 && (
+                        <div className="text-center py-8">
+                            <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                                <Check size={40} strokeWidth={3}/>
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-800 mb-2">Agendado!</h3>
+                            <p className="text-slate-500 mb-6">Te esperamos no dia {bookingDate} às {bookingTime}.</p>
+                            <button onClick={closeBookingModal} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold">Fechar</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
+        {/* Checkout Modal (Simple) */}
+        {checkoutAppointment && (
+             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                 <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
+                     <h3 className="text-lg font-bold text-slate-800 mb-1">Finalizar Atendimento</h3>
+                     <p className="text-sm text-slate-400 mb-4">{checkoutAppointment.clientName} - {checkoutAppointment.serviceName}</p>
+                     
+                     <div className="bg-slate-50 p-4 rounded-2xl mb-4 max-h-40 overflow-y-auto">
+                         <p className="text-xs font-bold text-slate-400 uppercase mb-2">Adicionar Consumo</p>
+                         {products.map(p => {
+                             const qty = checkoutCart.find(i => i.product.id === p.id)?.quantity || 0;
+                             return (
+                                 <div key={p.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
+                                     <span className="text-sm font-medium text-slate-600 truncate max-w-[120px]">{p.name}</span>
+                                     <div className="flex items-center gap-2">
+                                         {qty > 0 && <button onClick={() => updateCheckoutQuantity(p, -1)} className="text-slate-400 hover:text-red-500"><Minus size={16}/></button>}
+                                         <span className="text-xs font-bold w-4 text-center">{qty > 0 ? qty : '-'}</span>
+                                         <button onClick={() => updateCheckoutQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
+                                     </div>
+                                 </div>
+                             );
+                         })}
+                     </div>
+
+                     <div className="flex justify-between items-center mb-6">
+                         <span className="text-slate-500 font-medium">Total Final</span>
+                         <span className="text-2xl font-black text-slate-800">
+                             R$ {checkoutAppointment.price + checkoutCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}
+                         </span>
+                     </div>
+
+                     <button onClick={finalizeCheckout} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200 mb-2">Receber Pagamento</button>
+                     <button onClick={closeCheckoutModal} className="w-full py-3 text-slate-400 font-bold text-sm">Cancelar</button>
+                 </div>
+             </div>
+        )}
     </Layout>
   );
 };

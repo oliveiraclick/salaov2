@@ -119,9 +119,36 @@ const getMockTenants = (): Tenant[] => {
 
 const getMockPlans = (): SaasPlan[] => {
   return [
-    { id: '1', name: 'Start', price: 0, features: ['Agenda Simples', 'Link Personalizado', 'Até 50 agendamentos/mês'], isRecommended: false },
-    { id: '2', name: 'Pro', price: 99, features: ['Agenda Ilimitada', 'Controle Financeiro', 'Gestão de Estoque', 'Site Próprio'], isRecommended: true },
-    { id: '3', name: 'Enterprise', price: 199, features: ['Múltiplos Profissionais', 'Dashboard Avançado', 'Campanhas de Marketing', 'Suporte Prioritário'], isRecommended: false }
+    { 
+      id: '1', 
+      name: 'Start', 
+      price: 0, // Legacy support
+      basePrice: 0,
+      pricePerUser: 0,
+      minUsers: 0,
+      features: ['Agenda Simples', 'Link Personalizado', 'Até 50 agendamentos/mês'], 
+      isRecommended: false 
+    },
+    { 
+      id: '2', 
+      name: 'Profissional', 
+      price: 29.90, 
+      basePrice: 29.90,
+      pricePerUser: 10.00,
+      minUsers: 0, // Até 10 funcionários
+      features: ['Agenda Ilimitada', 'Controle Financeiro', 'Gestão de Estoque', 'Site Próprio'], 
+      isRecommended: true 
+    },
+    { 
+      id: '3', 
+      name: 'Redes', 
+      price: 169.90, 
+      basePrice: 19.90, // Mais barato na base
+      pricePerUser: 10.00,
+      minUsers: 11, // Gatilho para cobrar de 11 em diante
+      features: ['Múltiplos Profissionais (+10)', 'Dashboard Avançado', 'Campanhas de Marketing', 'Suporte Prioritário'], 
+      isRecommended: false 
+    }
   ];
 };
 
@@ -264,7 +291,6 @@ export const fetchAppointments = async (): Promise<Appointment[]> => {
         clientName: d.client_name,
         clientId: d.client_id,
         totalPrice: d.total_price,
-        // products need JSON parsing if stored as JSONB
     }));
   }
 
@@ -293,7 +319,7 @@ export const persistAppointments = async (appointments: Appointment[]) => {
               price: last.price,
               total_price: last.totalPrice,
               status: last.status,
-              products: last.products // JSONB support needed
+              products: last.products
           });
       }
   }
@@ -334,7 +360,6 @@ export const incrementViews = async (): Promise<number> => {
 // --- CLIENT & FINANCIAL ASYNC ---
 
 export const fetchClients = async (): Promise<Client[]> => {
-  // SUPABASE INTEGRATION
   if (isSupabaseConfigured() && supabase) {
     const { data } = await supabase.from('clients').select('*').eq('salon_slug', currentNamespace);
     if (data && data.length > 0) {
@@ -348,15 +373,14 @@ export const fetchClients = async (): Promise<Client[]> => {
     }
   }
 
-  // Fallback LocalStorage
   const key = getKey(KEYS.CLIENTS);
   const data = localStorage.getItem(key);
   return safeParse<Client[]>(data, []);
 };
 
 export const persistClient = async (client: Client) => {
-  // 1. Persistência Local (Cache Imediato)
-  const clients = await fetchClients(); 
+  // Local cache
+  const clients = await fetchClients();
   const index = clients.findIndex(c => c.phone === client.phone);
   if (index >= 0) {
     clients[index] = client;
@@ -365,9 +389,8 @@ export const persistClient = async (client: Client) => {
   }
   localStorage.setItem(getKey(KEYS.CLIENTS), JSON.stringify(clients));
 
-  // 2. Persistência Supabase (Cloud)
+  // Supabase Sync
   if (isSupabaseConfigured() && supabase) {
-    // Tenta verificar se já existe um cliente com este telefone neste salão para pegar o ID real
     const { data: existing } = await supabase
       .from('clients')
       .select('id')
@@ -376,14 +399,13 @@ export const persistClient = async (client: Client) => {
       .maybeSingle();
 
     const dbClient = {
-      id: existing ? existing.id : undefined, // Se existir, usa o ID para update. Se não, undefined gera um novo UUID
+      id: existing ? existing.id : undefined,
       salon_slug: currentNamespace,
       name: client.name,
       phone: client.phone,
       birth_date: client.birthDate
     };
 
-    // Upsert: Insere ou Atualiza baseado no ID (se fornecido)
     await supabase.from('clients').upsert(dbClient);
   }
 };
@@ -445,10 +467,18 @@ export const persistTenants = async (tenants: Tenant[]) => {
 };
 
 export const fetchSaasPlans = async (): Promise<SaasPlan[]> => {
-  // SUPABASE INTEGRATION FOR PLANS
   if (isSupabaseConfigured() && supabase) {
       const { data } = await supabase.from('saas_plans').select('*');
-      if (data && data.length > 0) return data;
+      if (data && data.length > 0) return data.map((p:any) => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          basePrice: p.base_price, // Map Supabase snake_case to camelCase
+          pricePerUser: p.price_per_user,
+          minUsers: p.min_users,
+          features: p.features,
+          isRecommended: p.is_recommended
+      }));
   }
 
   const data = localStorage.getItem(SAAS_KEYS.PLANS);
@@ -464,13 +494,14 @@ export const persistSaasPlans = async (plans: SaasPlan[]) => {
   localStorage.setItem(SAAS_KEYS.PLANS, JSON.stringify(plans));
   
   if (isSupabaseConfigured() && supabase) {
-      // Upsert plans to Supabase
-      // Assuming a 'saas_plans' table exists (if not, it needs to be created in SQL)
       for (const p of plans) {
           await supabase.from('saas_plans').upsert({
               id: p.id.length < 10 ? undefined : p.id,
               name: p.name,
               price: p.price,
+              base_price: p.basePrice || 0,
+              price_per_user: p.pricePerUser || 0,
+              min_users: p.minUsers || 0,
               features: p.features,
               is_recommended: p.isRecommended
           });

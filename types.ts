@@ -119,7 +119,11 @@ export interface Tenant {
 export interface SaasPlan {
   id: string;
   name: string;
-  price: number;
+  // Legacy price field is kept but we rely on basePrice/pricePerUser now
+  price: number; 
+  basePrice?: number; // Preço de adesão/base mensal
+  pricePerUser?: number; // Custo por funcionário adicional
+  minUsers?: number; // Gatilho: só vale a partir de X funcionários
   features: string[];
   isRecommended: boolean;
 }
