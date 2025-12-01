@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import EmptyState from './components/EmptyState';
@@ -1208,7 +1207,7 @@ const App: React.FC = () => {
         
         {/* Booking Modal Logic (Simplified for space, assuming 6 steps or similar) */}
         {selectedServiceForBooking && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4">
                 <div className="bg-white w-full sm:max-w-md p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
                     {bookingStep === 1 && (
                         <div>
@@ -1236,7 +1235,7 @@ const App: React.FC = () => {
                     {bookingStep === 2 && (
                          <div>
                              <h3 className="text-lg font-bold text-slate-800 mb-4">Data e Hora</h3>
-                             <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-bold text-slate-600" onChange={e => setBookingDate(e.target.value)} />
+                             <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-bold text-slate-600" value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
                              <div className="grid grid-cols-4 gap-2 mb-4">
                                  {['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(time => (
                                      <button key={time} onClick={() => setBookingTime(time)} className={`py-2 rounded-lg font-bold text-xs ${bookingTime === time ? 'bg-rose-600 text-white' : 'bg-slate-50 text-slate-500'}`}>{time}</button>
@@ -1337,7 +1336,7 @@ const App: React.FC = () => {
                                      <div className="flex items-center gap-2">
                                          {qty > 0 && <button onClick={() => updateCheckoutQuantity(p, -1)} className="text-slate-400 hover:text-red-500"><Minus size={16}/></button>}
                                          <span className="text-xs font-bold w-4 text-center">{qty > 0 ? qty : '-'}</span>
-                                         <button onClick={() => updateBookingQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
+                                         <button onClick={() => updateCheckoutQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
                                      </div>
                                  </div>
                              );
