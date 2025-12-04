@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Scissors, Heart, Globe, Wallet, Zap, CheckCircle2, Search, User, ChevronRight, Star, MapPin, Map, Edit2, Trash2, Plus, X } from 'lucide-react';
+import { Scissors, Heart, Globe, Wallet, Zap, CheckCircle2, Search, User, ChevronRight, Star, MapPin, Map as MapIcon, Edit2, Trash2, Plus, X } from 'lucide-react'; // Map aliased
 import { ViewState, SalonMetadata, SaasPlan, Tenant } from '../types';
 
 // --- PROPS INTERFACES ---
@@ -306,7 +305,7 @@ export const SaaSAdmin: React.FC<SaaSAdminProps> = ({
                         </div>
 
                         <div className="bg-white p-5 rounded-2xl border border-slate-100">
-                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Map size={18}/> Cobertura Geográfica</h3>
+                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><MapIcon size={18}/> Cobertura Geográfica</h3>
                             <div className="space-y-3">
                                 {Object.entries(topCities).map(([city, count]: any) => (
                                     <div key={city} className="flex justify-between items-center text-sm">

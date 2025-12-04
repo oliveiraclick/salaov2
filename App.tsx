@@ -4,7 +4,7 @@ import EmptyState from './components/EmptyState';
 import { SaaS_LP, Marketplace, SaaSAdmin } from './components/SaaSViews';
 import { ViewState, SalonMetadata, Service, Appointment, Product, Transaction, Employee, Client, ShopSettings, Tenant, SaasPlan } from './types';
 import { getPlatformSalons, setCurrentNamespace, getCurrentNamespace, fetchSettings, fetchServices, fetchEmployees, persistAppointments, fetchAppointments, fetchProducts, addTransaction, fetchClients, persistClient, fetchTransactions, persistServices, persistProducts, persistEmployees, persistSettings, incrementViews, fetchTenants, fetchSaasPlans, persistSaasPlans } from './services/storage';
-import { sendFinancialWebhook, saveIntegrationConfig, getIntegrationConfig } from './services/webhook';
+import { sendFinancialWebhook, saveIntegrationConfig, getIntegrationConfig, FinancialPayload } from './services/webhook';
 import { getLocationContext } from './services/gemini';
 import { Calendar, Scissors, Wallet, Settings, Package, MapPin, Phone, Share2, ArrowLeft, Check, Plus, Minus, Trash2, ShoppingBag, TrendingUp, TrendingDown, Edit2, Camera, Save, User, Loader2, Map as MapIcon } from 'lucide-react';
 
@@ -569,7 +569,7 @@ const App: React.FC = () => {
       // Etapa 2: Gatilho de Despesa/Receita Manual
       sendFinancialWebhook({
         type: newTrans.type === 'income' ? 'RECEITA' : 'DESPESA',
-        category: richCategory,
+        category: richCategory as FinancialPayload['category'],
         amount: newTrans.amount,
         date: new Date(newTrans.date).toISOString(),
         description: richDescription

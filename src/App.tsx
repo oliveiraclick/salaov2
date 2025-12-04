@@ -4,7 +4,7 @@ import EmptyState from './components/EmptyState';
 import { SaaS_LP, Marketplace, SaaSAdmin } from './components/SaaSViews'; // Import the new components
 import { ViewState, SalonMetadata, Service, Appointment, Product, Transaction, Employee, Client, ShopSettings, Tenant, SaasPlan } from './types';
 import { getPlatformSalons, setCurrentNamespace, getCurrentNamespace, fetchSettings, fetchServices, fetchEmployees, persistAppointments, fetchAppointments, fetchProducts, addTransaction, fetchClients, persistClient, fetchTransactions, persistServices, persistProducts, persistEmployees, persistSettings, incrementViews, fetchTenants, fetchSaasPlans, persistSaasPlans } from './services/storage';
-import { sendFinancialWebhook, saveIntegrationConfig, getIntegrationConfig } from './services/webhook';
+import { sendFinancialWebhook, saveIntegrationConfig, getIntegrationConfig, FinancialPayload } from './services/webhook'; // Import FinancialPayload
 import { getLocationContext } from './services/gemini';
 import { Calendar, LayoutDashboard, Scissors, Store, Users, Wallet, Settings, Package, Percent, MapPin, Phone, Star, Share2, Lock, ArrowLeft, Clock, Search, ChevronRight, Check, Globe, Zap, Heart, CheckCircle2, X, User, Plus, Minus, Trash2, ShoppingBag, DollarSign, CalendarDays, History, AlertCircle, LogOut, TrendingUp, TrendingDown, Edit2, Camera, Save, BarChart3, Shield, Map as MapIcon, CreditCard, Tag, LayoutGrid, ArrowRight, Smartphone, Play, Loader2, Link } from 'lucide-react'; // Added DollarSign and AlertCircle, aliased Map to MapIcon
 
@@ -195,7 +195,7 @@ const App: React.FC = () => {
       if (view !== ViewState.SAAS_LP && view !== ViewState.MARKETPLACE) {
           refreshData();
       }
-  }, [view, isEditingService, isEditingProduct, isEditingEmployee, isAddingTransaction, checkoutAppointment, showUpgradeModal, showAddMoreEmployeesModal, showPaymentPromptModal]); // Add new modal states to dependencies
+  }, [view, isEditingService, isEditingProduct, isEditingEmployee, isAddingTransaction, checkoutAppointment, showUpgradeModal, showAddMoreEmployeesModal, showPaymentPromptModal]); // Added new modal states to dependencies
 
   // Load Location Context with Gemini Maps
   useEffect(() => {
@@ -319,6 +319,7 @@ const App: React.FC = () => {
     setBookingCart([]);
     setBookingStep(1); 
     setBookingTime('');
+    setBookingDate(''); // Reset date
     setClientName('');
     setClientPhone('');
     setClientBirthDate('');
@@ -607,7 +608,7 @@ const App: React.FC = () => {
       // Etapa 2: Gatilho de Despesa/Receita Manual
       sendFinancialWebhook({
         type: newTrans.type === 'income' ? 'RECEITA' : 'DESPESA',
-        category: richCategory,
+        category: richCategory as FinancialPayload['category'],
         amount: newTrans.amount,
         date: new Date(newTrans.date).toISOString(),
         description: richDescription
@@ -1120,339 +1121,257 @@ const App: React.FC = () => {
      </div>
   );
 
-  return (
-    <Layout 
-       currentView={view} 
-       setView={setView} 
-       salonName={salonName}
-       activeClientTab={activeClientTab}
-       onClientTabChange={setActiveClientTab}
-    >
-        {isLoading && (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+  // Conditional Rendering Logic
+  const renderContent = () => {
+    switch(view) {
+      case ViewState.SAAS_LP:
+        return <SaaS_LP setView={setView} setShowAdminLogin={setShowAdminLogin} saasPlans={saasPlans} />;
+      case ViewState.MARKETPLACE:
+        return <Marketplace platformSalons={platformSalons} randomSalons={randomSalons} showAllSalons={showAllSalons} setShowAllSalons={setShowAllSalons} handleSalonSelect={handleSalonSelect} />;
+      case ViewState.SAAS_ADMIN:
+        return <SaaSAdmin tenants={tenants} saasTab={saasTab} setSaasTab={setSaasTab} handleAdminLogout={handleAdminLogout} saasPlans={saasPlans} isEditingPlan={isEditingPlan} setIsEditingPlan={setIsEditingPlan} planForm={planForm} setPlanForm={setPlanForm} setEditingPlanId={setEditingPlanId} featureInput={featureInput} setFeatureInput={setFeatureInput} handleAddFeature={handleAddFeature} handleRemoveFeature={handleRemoveFeature} handleSavePlan={handleSavePlan} handleDeletePlan={handleDeletePlan} />;
+      default:
+        // All other views are wrapped in Layout
+        return (
+          <Layout 
+            currentView={view} 
+            setView={setView} 
+            salonName={salonName}
+            activeClientTab={activeClientTab}
+            onClientTabChange={setActiveClientTab}
+          >
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
                 <Loader2 className="animate-spin mb-2" />
                 <span className="text-xs font-bold">Carregando...</span>
-            </div>
-        )}
-
-        {!isLoading && (
-            <>
-                {view === ViewState.SAAS_LP && (
-                  <SaaS_LP 
-                    setView={setView} 
-                    setShowAdminLogin={setShowAdminLogin} 
-                    saasPlans={saasPlans} 
-                  />
-                )}
-                {view === ViewState.MARKETPLACE && (
-                  <Marketplace 
-                    platformSalons={platformSalons} 
-                    randomSalons={randomSalons} 
-                    showAllSalons={showAllSalons} 
-                    setShowAllSalons={setShowAllSalons} 
-                    handleSalonSelect={handleSalonSelect} 
-                  />
-                )}
-                {view === ViewState.SAAS_ADMIN && (
-                  <SaaSAdmin 
-                    tenants={tenants} 
-                    saasTab={saasTab} 
-                    setSaasTab={setSaasTab} 
-                    handleAdminLogout={handleAdminLogout} 
-                    saasPlans={saasPlans} 
-                    isEditingPlan={isEditingPlan} 
-                    setIsEditingPlan={setIsEditingPlan} 
-                    planForm={planForm} 
-                    setPlanForm={setPlanForm} 
-                    setEditingPlanId={setEditingPlanId} 
-                    featureInput={featureInput} 
-                    setFeatureInput={setFeatureInput} 
-                    handleAddFeature={handleAddFeature} 
-                    handleRemoveFeature={handleRemoveFeature} 
-                    handleSavePlan={handleSavePlan} 
-                    handleDeletePlan={handleDeletePlan} 
-                  />
-                )}
-                {(view === ViewState.PUBLIC_SALON || view === ViewState.CLIENT_STORE) && renderPublicSalon()}
-                
-                {/* Admin Views */}
+              </div>
+            ) : (
+              <>
+                {view === ViewState.PUBLIC_SALON && renderPublicSalon()}
                 {view === ViewState.DASHBOARD && renderDashboard()}
                 {view === ViewState.SERVICES && renderServices()}
                 {view === ViewState.PRODUCTS && renderProducts()}
                 {view === ViewState.TEAM && renderTeam()}
                 {view === ViewState.FINANCE && renderFinance()}
                 {view === ViewState.SETTINGS && renderSettings()}
-            </>
-        )}
+              </>
+            )}
+          </Layout>
+        );
+    }
+  };
+  
+  return (
+    <>
+      {renderContent()}
+      
+      {/* Modals */}
+      {showAdminLogin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">Acesso Restrito</h3>
+                  <input 
+                      type="password" 
+                      className="w-full bg-slate-100 border-none rounded-xl p-3 mb-4 text-center font-bold text-slate-800 focus:ring-2 focus:ring-rose-500 outline-none" 
+                      placeholder="Senha"
+                      value={adminPass}
+                      onChange={e => setAdminPass(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                      <button onClick={() => setShowAdminLogin(false)} className="flex-1 py-3 text-slate-500 font-bold text-sm">Cancelar</button>
+                      <button onClick={handleAdminLogin} className="flex-1 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-200">Entrar</button>
+                  </div>
+              </div>
+          </div>
+      )}
+      
+      {selectedServiceForBooking && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in px-4">
+              <div className="bg-white w-full max-w-md p-6 rounded-2xl shadow-2xl max-h-[calc(100vh-8rem)] overflow-y-auto">
+                  {bookingStep === 1 && (
+                      <div>
+                           <h3 className="text-lg font-bold text-slate-800 mb-4">Escolha o Profissional</h3>
+                           <div className="space-y-3">
+                               {employees.map(emp => (
+                                   <div key={emp.id} onClick={() => { setSelectedEmployeeForBooking(emp); setBookingStep(2); }} className="flex items-center gap-4 p-3 rounded-2xl border border-slate-100 cursor-pointer hover:bg-slate-50">
+                                       <div className="w-12 h-12 bg-slate-200 rounded-full overflow-hidden">
+                                           <img src={emp.photoUrl} className="w-full h-full object-cover" alt={emp.name}/>
+                                       </div>
+                                       <div>
+                                           <h4 className="font-bold text-slate-800">{emp.name}</h4>
+                                           <p className="text-xs text-slate-400">{emp.role}</p>
+                                       </div>
+                                   </div>
+                               ))}
+                               <button onClick={() => { setSelectedEmployeeForBooking({ id: 'any', name: 'Qualquer Profissional', role: '', bio: '' }); setBookingStep(2); }} className="w-full py-3 text-slate-500 font-bold text-sm bg-slate-50 rounded-xl mt-2">
+                                   Qualquer Profissional
+                               </button>
+                           </div>
+                           <button onClick={closeBookingModal} className="w-full mt-4 py-3 text-rose-500 font-bold text-sm">Cancelar</button>
+                      </div>
+                  )}
+                  
+                  {bookingStep === 2 && (
+                       <div>
+                           <h3 className="text-lg font-bold text-slate-800 mb-4">Data e Hora</h3>
+                           <input 
+                              type="date" 
+                              className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-bold text-slate-800 border border-slate-200 outline-none focus:ring-2 focus:ring-rose-500 appearance-none" 
+                              value={bookingDate} 
+                              onChange={e => setBookingDate(e.target.value)} 
+                           />
+                           <div className="grid grid-cols-4 gap-2 mb-4">
+                               {['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(time => (
+                                   <button key={time} onClick={() => setBookingTime(time)} className={`py-2 rounded-lg font-bold text-xs ${bookingTime === time ? 'bg-rose-600 text-white' : 'bg-slate-50 text-slate-500'}`}>{time}</button>
+                               ))}
+                           </div>
+                           <button disabled={!bookingDate || !bookingTime} onClick={() => setBookingStep(3)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold disabled:opacity-50">Continuar</button>
+                           <button onClick={() => setBookingStep(1)} className="w-full mt-2 py-3 text-slate-400 font-bold text-sm">Voltar</button>
+                       </div>
+                  )}
 
-        {/* Modals */}
-        {showAdminLogin && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100">
-                    <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">Acesso Restrito</h3>
-                    <input 
-                        type="password" 
-                        className="w-full bg-slate-100 border-none rounded-xl p-3 mb-4 text-center font-bold text-slate-800 focus:ring-2 focus:ring-rose-500 outline-none" 
-                        placeholder="Senha"
-                        value={adminPass}
-                        onChange={e => setAdminPass(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowAdminLogin(false)} className="flex-1 py-3 text-slate-500 font-bold text-sm">Cancelar</button>
-                        <button onClick={handleAdminLogin} className="flex-1 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-200">Entrar</button>
-                    </div>
-                </div>
-            </div>
-        )}
-        
-        {/* Booking Modal Logic (Simplified for space, assuming 6 steps or similar) */}
-        {selectedServiceForBooking && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4">
-                <div className="bg-white w-full sm:max-w-md p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
-                    {bookingStep === 1 && (
-                        <div>
-                             <h3 className="text-lg font-bold text-slate-800 mb-4">Escolha o Profissional</h3>
-                             <div className="space-y-3">
-                                 {employees.map(emp => (
-                                     <div key={emp.id} onClick={() => { setSelectedEmployeeForBooking(emp); setBookingStep(2); }} className="flex items-center gap-4 p-3 rounded-2xl border border-slate-100 cursor-pointer hover:bg-slate-50">
-                                         <div className="w-12 h-12 bg-slate-200 rounded-full overflow-hidden">
-                                             <img src={emp.photoUrl} className="w-full h-full object-cover"/>
-                                         </div>
-                                         <div>
-                                             <h4 className="font-bold text-slate-800">{emp.name}</h4>
-                                             <p className="text-xs text-slate-400">{emp.role}</p>
-                                         </div>
-                                     </div>
-                                 ))}
-                                 <button onClick={() => { setSelectedEmployeeForBooking({ id: 'any', name: 'Qualquer Profissional', role: '', bio: '' }); setBookingStep(2); }} className="w-full py-3 text-slate-500 font-bold text-sm bg-slate-50 rounded-xl mt-2">
-                                     Qualquer Profissional
-                                 </button>
-                             </div>
-                             <button onClick={closeBookingModal} className="w-full mt-4 py-3 text-rose-500 font-bold text-sm">Cancelar</button>
-                        </div>
-                    )}
-                    
-                    {bookingStep === 2 && (
-                         <div>
-                             <h3 className="text-lg font-bold text-slate-800 mb-4">Data e Hora</h3>
-                             <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-bold text-slate-600" value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
-                             <div className="grid grid-cols-4 gap-2 mb-4">
-                                 {['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map(time => (
-                                     <button key={time} onClick={() => setBookingTime(time)} className={`py-2 rounded-lg font-bold text-xs ${bookingTime === time ? 'bg-rose-600 text-white' : 'bg-slate-50 text-slate-500'}`}>{time}</button>
-                                 ))}
-                             </div>
-                             <button disabled={!bookingDate || !bookingTime} onClick={() => setBookingStep(3)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold disabled:opacity-50">Continuar</button>
-                             <button onClick={() => setBookingStep(1)} className="w-full mt-2 py-3 text-slate-400 font-bold text-sm">Voltar</button>
-                         </div>
-                    )}
+                  {bookingStep === 3 && (
+                      <div>
+                           <h3 className="text-lg font-bold text-slate-800 mb-4">Deseja adicionar produtos?</h3>
+                           <p className="text-sm text-slate-500 mb-6">Leve produtos para casa e pague tudo junto no salão.</p>
+                           <button onClick={() => setBookingStep(4)} className="w-full bg-rose-50 text-rose-600 py-4 rounded-xl font-bold mb-3">Sim, ver produtos</button>
+                           <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Não, finalizar agendamento</button>
+                      </div>
+                  )}
 
-                    {bookingStep === 3 && (
-                        <div>
-                             <h3 className="text-lg font-bold text-slate-800 mb-4">Deseja adicionar produtos?</h3>
-                             <p className="text-sm text-slate-500 mb-6">Leve produtos para casa e pague tudo junto no salão.</p>
-                             <button onClick={() => setBookingStep(4)} className="w-full bg-rose-50 text-rose-600 py-4 rounded-xl font-bold mb-3">Sim, ver produtos</button>
-                             <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Não, finalizar agendamento</button>
-                        </div>
-                    )}
+                  {bookingStep === 4 && (
+                      <div>
+                           <h3 className="text-lg font-bold text-slate-800 mb-4">Adicionar Produtos</h3>
+                           <div className="space-y-3 max-h-60 overflow-y-auto mb-4">
+                               {products.map(p => {
+                                   const qty = bookingCart.find(i => i.product.id === p.id)?.quantity || 0;
+                                   return (
+                                       <div key={p.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-xl">
+                                           <div>
+                                               <p className="font-bold text-sm text-slate-800">{p.name}</p>
+                                               <p className="text-xs text-rose-500 font-bold">R$ {p.price}</p>
+                                           </div>
+                                           <div className="flex items-center gap-3">
+                                               {qty > 0 && <button onClick={() => updateBookingQuantity(p, -1)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-600">-</button>}
+                                               <span className="font-bold text-slate-800 w-4 text-center">{qty}</span>
+                                               <button onClick={() => updateBookingQuantity(p, 1)} className="w-8 h-8 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center font-bold">+</button>
+                                           </div>
+                                       </div>
+                                   );
+                               })}
+                           </div>
+                           <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Continuar</button>
+                      </div>
+                  )}
 
-                    {bookingStep === 4 && (
-                        <div>
-                             <h3 className="text-lg font-bold text-slate-800 mb-4">Adicionar Produtos</h3>
-                             <div className="space-y-3 max-h-60 overflow-y-auto mb-4">
-                                 {products.map(p => {
-                                     const qty = bookingCart.find(i => i.product.id === p.id)?.quantity || 0;
-                                     return (
-                                         <div key={p.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-xl">
-                                             <div>
-                                                 <p className="font-bold text-sm text-slate-800">{p.name}</p>
-                                                 <p className="text-xs text-rose-500 font-bold">R$ {p.price}</p>
-                                             </div>
-                                             <div className="flex items-center gap-3">
-                                                 {qty > 0 && <button onClick={() => updateBookingQuantity(p, -1)} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-600">-</button>}
-                                                 <span className="font-bold text-slate-800 w-4 text-center">{qty}</span>
-                                                 <button onClick={() => updateBookingQuantity(p, 1)} className="w-8 h-8 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center font-bold">+</button>
-                                             </div>
-                                         </div>
-                                     );
-                                 })}
-                             </div>
-                             <button onClick={() => setBookingStep(5)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Continuar</button>
-                        </div>
-                    )}
+                  {bookingStep === 5 && (
+                      <div>
+                           <h3 className="text-lg font-bold text-slate-800 mb-4">Seus Dados</h3>
+                           <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Celular (WhatsApp)" value={clientPhone} onChange={handlePhoneChange}/>
+                           {isNewClient && (
+                               <>
+                                   <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Nome Completo" value={clientName} onChange={e => setClientName(e.target.value)}/>
+                                   <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium text-slate-500" placeholder="Data de Nascimento" value={clientBirthDate} onChange={e => setClientBirthDate(e.target.value)}/>
+                               </>
+                           )}
+                           <div className="bg-slate-50 p-4 rounded-xl mb-4">
+                               <p className="text-xs text-slate-400 font-bold uppercase mb-2">Resumo</p>
+                               <div className="flex justify-between text-sm mb-1"><span className="text-slate-600">{selectedServiceForBooking.name}</span><span className="font-bold">R$ {selectedServiceForBooking.price}</span></div>
+                               {bookingCart.length > 0 && bookingCart.map(i => (
+                                   <div key={i.product.id} className="flex justify-between text-sm mb-1"><span className="text-slate-600">{i.quantity}x {i.product.name}</span><span className="font-bold">R$ {i.product.price * i.quantity}</span></div>
+                               ))}
+                               <div className="border-t border-slate-200 mt-2 pt-2 flex justify-between font-black text-slate-800">
+                                   <span>Total Estimado</span>
+                                   <span>R$ {selectedServiceForBooking.price + bookingCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}</span>
+                               </div>
+                           </div>
+                           <button onClick={confirmBooking} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200">Confirmar Agendamento</button>
+                      </div>
+                  )}
 
-                    {bookingStep === 5 && (
-                        <div>
-                             <h3 className="text-lg font-bold text-slate-800 mb-4">Seus Dados</h3>
-                             <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Celular (WhatsApp)" value={clientPhone} onChange={handlePhoneChange}/>
-                             {isNewClient && (
-                                 <>
-                                     <input className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium" placeholder="Seu Nome Completo" value={clientName} onChange={e => setClientName(e.target.value)}/>
-                                     <input type="date" className="w-full p-4 bg-slate-50 rounded-xl mb-3 font-medium text-slate-500" placeholder="Data de Nascimento" value={clientBirthDate} onChange={e => setClientBirthDate(e.target.value)}/>
-                                 </>
-                             )}
-                             <div className="bg-slate-50 p-4 rounded-xl mb-4">
-                                 <p className="text-xs text-slate-400 font-bold uppercase mb-2">Resumo</p>
-                                 <div className="flex justify-between text-sm mb-1"><span className="text-slate-600">{selectedServiceForBooking.name}</span><span className="font-bold">R$ {selectedServiceForBooking.price}</span></div>
-                                 {bookingCart.length > 0 && bookingCart.map(i => (
-                                     <div key={i.product.id} className="flex justify-between text-sm mb-1"><span className="text-slate-600">{i.quantity}x {i.product.name}</span><span className="font-bold">R$ {i.product.price * i.quantity}</span></div>
-                                 ))}
-                                 <div className="border-t border-slate-200 mt-2 pt-2 flex justify-between font-black text-slate-800">
-                                     <span>Total Estimado</span>
-                                     <span>R$ {selectedServiceForBooking.price + bookingCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}</span>
-                                 </div>
-                             </div>
-                             <button onClick={confirmBooking} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200">Confirmar Agendamento</button>
-                        </div>
-                    )}
+                  {bookingStep === 6 && (
+                      <div className="text-center py-8">
+                          <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                              <Check size={40} strokeWidth={3}/>
+                          </div>
+                          <h3 className="text-2xl font-black text-slate-800 mb-2">Agendado!</h3>
+                          <p className="text-slate-500 mb-6">Te esperamos no dia {bookingDate} às {bookingTime}.</p>
+                          <button onClick={closeBookingModal} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold">Fechar</button>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
 
-                    {bookingStep === 6 && (
-                        <div className="text-center py-8">
-                            <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                                <Check size={40} strokeWidth={3}/>
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-800 mb-2">Agendado!</h3>
-                            <p className="text-slate-500 mb-6">Te esperamos no dia {bookingDate} às {bookingTime}.</p>
-                            <button onClick={closeBookingModal} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold">Fechar</button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
+      {checkoutAppointment && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
+                   <h3 className="text-lg font-bold text-slate-800 mb-1">Finalizar Atendimento</h3>
+                   <p className="text-sm text-slate-400 mb-4">{checkoutAppointment.clientName} - {checkoutAppointment.serviceName}</p>
+                   
+                   <div className="bg-slate-50 p-4 rounded-2xl mb-4 max-h-40 overflow-y-auto">
+                       <p className="text-xs font-bold text-slate-400 uppercase mb-2">Adicionar Consumo</p>
+                       {products.map(p => {
+                           const qty = checkoutCart.find(i => i.product.id === p.id)?.quantity || 0;
+                           return (
+                               <div key={p.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
+                                   <span className="text-sm font-medium text-slate-600 truncate max-w-[120px]">{p.name}</span>
+                                   <div className="flex items-center gap-2">
+                                       {qty > 0 && <button onClick={() => updateCheckoutQuantity(p, -1)} className="text-slate-400 hover:text-red-500"><Minus size={16}/></button>}
+                                       <span className="text-xs font-bold w-4 text-center">{qty > 0 ? qty : '-'}</span>
+                                       <button onClick={() => updateCheckoutQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
+                                   </div>
+                               </div>
+                           );
+                       })}
+                   </div>
 
-        {/* Checkout Modal (Simple) */}
-        {checkoutAppointment && (
-             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                 <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
-                     <h3 className="text-lg font-bold text-slate-800 mb-1">Finalizar Atendimento</h3>
-                     <p className="text-sm text-slate-400 mb-4">{checkoutAppointment.clientName} - {checkoutAppointment.serviceName}</p>
-                     
-                     <div className="bg-slate-50 p-4 rounded-2xl mb-4 max-h-40 overflow-y-auto">
-                         <p className="text-xs font-bold text-slate-400 uppercase mb-2">Adicionar Consumo</p>
-                         {products.map(p => {
-                             const qty = checkoutCart.find(i => i.product.id === p.id)?.quantity || 0;
-                             return (
-                                 <div key={p.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-                                     <span className="text-sm font-medium text-slate-600 truncate max-w-[120px]">{p.name}</span>
-                                     <div className="flex items-center gap-2">
-                                         {qty > 0 && <button onClick={() => updateCheckoutQuantity(p, -1)} className="text-slate-400 hover:text-red-500"><Minus size={16}/></button>}
-                                         <span className="text-xs font-bold w-4 text-center">{qty > 0 ? qty : '-'}</span>
-                                         <button onClick={() => updateCheckoutQuantity(p, 1)} className="text-emerald-500"><Plus size={16}/></button>
-                                     </div>
-                                 </div>
-                             );
-                         })}
-                     </div>
+                   <div className="flex justify-between items-center mb-6">
+                       <span className="text-slate-500 font-medium">Total Final</span>
+                       <span className="text-2xl font-black text-slate-800">
+                           R$ {checkoutAppointment.price + checkoutCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}
+                       </span>
+                   </div>
 
-                     <div className="flex justify-between items-center mb-6">
-                         <span className="text-slate-500 font-medium">Total Final</span>
-                         <span className="text-2xl font-black text-slate-800">
-                             R$ {checkoutAppointment.price + checkoutCart.reduce((acc, i) => acc + (i.product.price * i.quantity), 0)}
-                         </span>
-                     </div>
+                   <button onClick={finalizeCheckout} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200 mb-2">Receber Pagamento</button>
+                   <button onClick={closeCheckoutModal} className="w-full py-3 text-slate-400 font-bold text-sm">Cancelar</button>
+               </div>
+           </div>
+      )}
+      
+      {showUpgradeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl text-center">
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Limite Atingido!</h3>
+                  <p className="text-sm text-slate-500 mb-4">Você atingiu o limite de ações para o plano Start. Faça upgrade para continuar.</p>
+                  <button onClick={() => setShowUpgradeModal(false)} className="w-full bg-rose-600 text-white rounded-xl font-bold py-3">Ver Planos</button>
+              </div>
+          </div>
+      )}
 
-                     <button onClick={finalizeCheckout} className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-200 mb-2">Receber Pagamento</button>
-                     <button onClick={closeCheckoutModal} className="w-full py-3 text-slate-400 font-bold text-sm">Cancelar</button>
-                 </div>
-             </div>
-        )}
+      {showAddMoreEmployeesModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl text-center">
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Profissional Salvo!</h3>
+                  <p className="text-sm text-slate-500 mb-4">Deseja cadastrar outro profissional agora?</p>
+                  <div className="flex gap-2">
+                      <button onClick={() => { setShowAddMoreEmployeesModal(false); setIsEditingEmployee(false); }} className="flex-1 py-3 text-slate-500 font-bold text-sm bg-slate-100 rounded-xl">Não, finalizar</button>
+                      <button onClick={() => setShowAddMoreEmployeesModal(false)} className="flex-1 bg-rose-600 text-white rounded-xl font-bold text-sm">Sim, adicionar</button>
+                  </div>
+              </div>
+          </div>
+      )}
 
-        {/* Upgrade Modal */}
-        {showUpgradeModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white rounded-2xl p-6 w-full max-w-xs text-center shadow-2xl transform transition-all scale-100">
-                    <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <AlertCircle size={32}/>
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800 mb-2">Limite de Ações Atingido!</h3>
-                    <p className="text-sm text-slate-500 mb-6">Você atingiu o limite de ações do seu plano atual. Para continuar usando todos os recursos, por favor, faça upgrade para um plano pago.</p>
-                    <button onClick={() => { setShowUpgradeModal(false); setView(ViewState.SAAS_LP); }} className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-200">
-                        Ver Planos
-                    </button>
-                    <button onClick={() => setShowUpgradeModal(false)} className="w-full mt-2 py-3 text-slate-500 font-bold text-sm">
-                        Fechar
-                    </button>
-                </div>
-            </div>
-        )}
-
-        {/* Add More Employees Modal */}
-        {showAddMoreEmployeesModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100 text-center">
-                    <h3 className="text-lg font-bold text-slate-800 mb-4">Funcionário Adicionado!</h3>
-                    <p className="text-sm text-slate-500 mb-6">Deseja adicionar mais funcionários?</p>
-                    <div className="flex gap-2">
-                        <button 
-                            onClick={() => {
-                                setShowAddMoreEmployeesModal(false);
-                                // The form is already reset and open for new input
-                                // isEditingEmployee remains true
-                            }} 
-                            className="flex-1 py-3 text-emerald-600 font-bold text-sm bg-emerald-50 rounded-xl"
-                        >
-                            Sim
-                        </button>
-                        <button 
-                            onClick={() => {
-                                setShowAddMoreEmployeesModal(false);
-                                setIsEditingEmployee(false); // Close the employee form
-                                checkAndShowPaymentPrompt(); // Trigger payment prompt check
-                            }} 
-                            className="flex-1 py-3 text-slate-500 font-bold text-sm bg-slate-100 rounded-xl"
-                        >
-                            Não
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* Payment Prompt Modal for Additional Employees */}
-        {showPaymentPromptModal && currentTenant && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl transform transition-all scale-100 text-center">
-                    <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <DollarSign size={32}/>
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800 mb-4">Atenção ao Seu Plano!</h3>
-                    {(() => {
-                        const tenantPlan = saasPlans.find(p => p.name === currentTenant.plan);
-                        if (!tenantPlan) {
-                            return <p className="text-sm text-slate-500 mb-6">Não foi possível encontrar os detalhes do seu plano.</p>;
-                        }
-
-                        const currentEmployeeCount = employees.length;
-                        const minUsers = tenantPlan.minUsers || 0;
-                        const pricePerUser = tenantPlan.pricePerUser || 0;
-
-                        if (currentEmployeeCount > minUsers) {
-                            const extraEmployees = currentEmployeeCount - minUsers;
-                            const additionalCost = extraEmployees * pricePerUser;
-                            return (
-                                <>
-                                    <p className="text-sm text-slate-500 mb-3">
-                                        Seu plano "{currentTenant.plan}" inclui até <span className="font-bold">{minUsers}</span> funcionário(s).
-                                        Atualmente, você tem <span className="font-bold">{currentEmployeeCount}</span> funcionário(s) cadastrado(s), excedendo o limite em <span className="font-bold">{extraEmployees}</span>.
-                                    </p>
-                                    <p className="text-sm font-bold text-rose-600 mb-6">
-                                        Isso gerará um custo adicional de R$ {additionalCost.toFixed(2)}/mês.
-                                    </p>
-                                    <p className="text-xs text-slate-400">Entre em contato para ajustar seu plano.</p>
-                                </>
-                            );
-                        }
-                        return <p className="text-sm text-slate-500 mb-6">Seu plano "{currentTenant.plan}" está em ordem com <span className="font-bold">{currentEmployeeCount}</span> funcionário(s).</p>;
-                    })()}
-                    <button 
-                        onClick={() => setShowPaymentPromptModal(false)} 
-                        className="w-full bg-rose-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-200 mt-4"
-                    >
-                        Entendi
-                    </button>
-                </div>
-            </div>
-        )}
-    </Layout>
+      {showPaymentPromptModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl text-center">
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Atualização de Plano</h3>
+                  <p className="text-sm text-slate-500 mb-4">Você adicionou mais profissionais. O valor da sua assinatura será atualizado na próxima cobrança.</p>
+                  <button onClick={() => setShowPaymentPromptModal(false)} className="w-full bg-slate-800 text-white rounded-xl font-bold py-3">Entendi</button>
+              </div>
+          </div>
+      )}
+    </>
   );
 };
 
